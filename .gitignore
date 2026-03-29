@@ -68,8 +68,22 @@ instance/
 # Scrapy stuff:
 .scrapy
 
+#data files
+data/Mal API Labels.csv
+data/Mal API.txt
+data/MalBehavD-V1-dataset.csv
+
+
 # Sphinx documentation
 docs/_build/
+
+# Project artifacts (large / generated)
+models/
+results/
+cache/
+*.pkl
+*.h5
+*.keras
 
 # PyBuilder
 .pybuilder/
