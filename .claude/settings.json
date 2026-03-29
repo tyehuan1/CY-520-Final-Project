@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(pip install:*)",
-      "Bash(python -m pytest tests/test_data_loader.py -v)"
+      "Bash(python -m pytest tests/test_data_loader.py -v)",
+      "Bash(python -c \":*)",
+      "Bash(python -m pytest tests/test_virustotal_labeler.py -v)"
     ]
   }
 }
