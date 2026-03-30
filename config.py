@@ -89,16 +89,16 @@ TOP_K_API_FREQUENCIES = 5
 # XGBoost hyperparameter search space
 # =============================================================================
 XGBOOST_PARAM_DIST = {
-    "n_estimators": [100, 200, 300, 400, 500],
-    "max_depth": [4, 5, 6, 7, 8, 9, 10],
-    "learning_rate": [0.01, 0.05, 0.1, 0.2, 0.3],
-    "subsample": [0.7, 0.8, 0.9, 1.0],
-    "colsample_bytree": [0.6, 0.7, 0.8, 0.9, 1.0],
-    "min_child_weight": [1, 3, 5, 7, 10],
-    "gamma": [0.0, 0.1, 0.2, 0.3],
+    "n_estimators": [100, 200, 300],
+    "max_depth": [4, 6, 8],
+    "learning_rate": [0.05, 0.1, 0.2],
+    "subsample": [0.8, 1.0],
+    "colsample_bytree": [0.7, 0.9],
+    "min_child_weight": [1, 5],
+    "gamma": [0.0, 0.1],
 }
-XGBOOST_CV_FOLDS = 5
-XGBOOST_N_ITER = 50  # Number of random search iterations
+XGBOOST_CV_FOLDS = 3
+XGBOOST_N_ITER = 25  # Number of random search iterations
 XGBOOST_TREE_METHOD = "hist"
 
 # =============================================================================
