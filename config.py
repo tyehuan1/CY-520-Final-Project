@@ -66,6 +66,11 @@ NUM_CLASSES = len(MALWARE_FAMILIES)
 # =============================================================================
 # Preprocessing
 # =============================================================================
+# Cap raw sequences at load time to avoid memory issues.
+# The longest LSTM input is 1000; TF-IDF benefits from more context but
+# sequences beyond 10k calls add diminishing returns.
+MAX_RAW_SEQUENCE_LENGTH = 10_000
+
 TEST_SIZE = 0.20
 MAX_CONSECUTIVE_DUPLICATES = 5
 PAD_TOKEN = "<PAD>"

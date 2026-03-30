@@ -4,7 +4,9 @@
       "Bash(pip install:*)",
       "Bash(python -m pytest tests/test_data_loader.py -v)",
       "Bash(python -c \":*)",
-      "Bash(python -m pytest tests/test_virustotal_labeler.py -v)"
+      "Bash(python -m pytest tests/test_virustotal_labeler.py -v)",
+      "Bash(python -m pytest tests/test_preprocessing.py -v)",
+      "Bash(python -m pytest tests/test_preprocessing.py::TestStratifiedSplit::test_no_data_leakage -v --tb=short)"
     ]
   }
 }

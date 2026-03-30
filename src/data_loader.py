@@ -7,7 +7,7 @@ Both datasets are loaded into a common format: a list of dicts with keys
 
 import csv
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import config as cfg
 from src.utils import get_logger
@@ -21,6 +21,7 @@ Sample = Dict[str, object]  # {"sequence": List[str], "label": str}
 def load_mal_api(
     sequences_path: Path = cfg.MAL_API_SEQUENCES_PATH,
     labels_path: Path = cfg.MAL_API_LABELS_PATH,
+    max_seq_len: Optional[int] = cfg.MAX_RAW_SEQUENCE_LENGTH,
 ) -> List[Sample]:
     """Load the Mal-API-2019 dataset.
 
@@ -29,6 +30,8 @@ def load_mal_api(
             space-separated API call names).
         labels_path: Path to ``Mal API Labels.csv`` (one label per line,
             no header).
+        max_seq_len: If set, truncate each sequence to this many tokens.
+            Some samples exceed 1 million API calls and would exhaust memory.
 
     Returns:
         List of sample dicts with keys ``sequence`` and ``label``.
@@ -38,12 +41,23 @@ def load_mal_api(
         ValueError: If the number of sequences and labels do not match.
     """
     logger.info("Loading Mal-API-2019 sequences from %s", sequences_path)
+    sequences: List[List[str]] = []
     with open(sequences_path, "r", encoding="utf-8") as f:
-        sequences = [line.strip().split() for line in f if line.strip()]
+        for line in f:
+            stripped = line.strip()
+            if stripped:
+                tokens = stripped.split()
+                if max_seq_len is not None and len(tokens) > max_seq_len:
+                    tokens = tokens[:max_seq_len]
+                sequences.append(tokens)
 
     logger.info("Loading Mal-API-2019 labels from %s", labels_path)
+    labels: List[str] = []
     with open(labels_path, "r", encoding="utf-8") as f:
-        labels = [line.strip() for line in f if line.strip()]
+        for line in f:
+            stripped = line.strip()
+            if stripped:
+                labels.append(stripped)
 
     if len(sequences) != len(labels):
         raise ValueError(
