@@ -7,7 +7,7 @@ single dense matrix for model training.
 
 import math
 from collections import Counter
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 from scipy.sparse import issparse
@@ -186,9 +186,9 @@ def build_feature_matrix(
     """Build the full concatenated feature matrix for XGBoost.
 
     Concatenates:
-    1. TF-IDF features (n_samples × ≤5000)
-    2. Statistical features (n_samples × 9)
-    3. API category ratio features (n_samples × 8)
+    1. TF-IDF features (n_samples x <=5000)
+    2. Statistical features (n_samples x 9)
+    3. API category ratio features (n_samples x 8)
 
     Args:
         samples: Samples with ``sequence`` field.
@@ -198,22 +198,33 @@ def build_feature_matrix(
     Returns:
         Dense array of shape ``(n_samples, total_features)``.
     """
-    tfidf = tfidf_transform(samples, tfidf_vectorizer)
-    stats = compute_statistical_features(samples, top_k)
-    cats = compute_category_features(samples)
+    parts = []
+    part_names = []
 
-    combined = np.hstack([tfidf, stats, cats])
+    tfidf = tfidf_transform(samples, tfidf_vectorizer)
+    parts.append(tfidf)
+    part_names.append(f"tfidf={tfidf.shape[1]}")
+
+    stats = compute_statistical_features(samples, top_k)
+    parts.append(stats)
+    part_names.append(f"stats={stats.shape[1]}")
+
+    cats = compute_category_features(samples)
+    parts.append(cats)
+    part_names.append(f"cats={cats.shape[1]}")
+
+    combined = np.hstack(parts)
     logger.info(
-        "Combined feature matrix: %s (tfidf=%d, stats=%d, cats=%d).",
+        "Combined feature matrix: %s (%s).",
         combined.shape,
-        tfidf.shape[1],
-        stats.shape[1],
-        cats.shape[1],
+        ", ".join(part_names),
     )
     return combined
 
 
-def get_feature_names(tfidf_vectorizer: TfidfVectorizer) -> List[str]:
+def get_feature_names(
+    tfidf_vectorizer: TfidfVectorizer,
+) -> List[str]:
     """Return ordered list of all feature names matching the combined matrix.
 
     Args:
@@ -222,5 +233,9 @@ def get_feature_names(tfidf_vectorizer: TfidfVectorizer) -> List[str]:
     Returns:
         List of feature name strings.
     """
-    tfidf_names = tfidf_vectorizer.get_feature_names_out().tolist()
-    return tfidf_names + STATISTICAL_FEATURE_NAMES + CATEGORY_FEATURE_NAMES
+    names = tfidf_vectorizer.get_feature_names_out().tolist()
+    return (
+        names
+        + STATISTICAL_FEATURE_NAMES
+        + CATEGORY_FEATURE_NAMES
+    )

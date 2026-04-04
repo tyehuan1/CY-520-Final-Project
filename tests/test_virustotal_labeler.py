@@ -38,11 +38,11 @@ def _make_vt_response(engine_results: dict) -> dict:
 # ── 10+ mocked VT responses for label matching ────────────────────────────
 
 MOCK_RESPONSES = [
-    # 1. Clear Trojan match
+    # 1. Clear Trojan match (non-generic labels that carry real Trojan signal)
     (
         {
-            "EngineA": _make_engine("Trojan.GenericKD.12345"),
-            "EngineB": _make_engine("Win32/Trojan.Agent"),
+            "EngineA": _make_engine("Trojan.Emotet"),
+            "EngineB": _make_engine("Win32/Trojan.Zbot"),
             "EngineC": _make_engine("Malware.Generic"),
         },
         "Trojan",
@@ -110,7 +110,8 @@ MOCK_RESPONSES = [
         },
         "Virus",
     ),
-    # 9. Mixed: Trojan appears more than Backdoor
+    # 9. Mixed weak non-Trojan: Trojan wins (Backdoor has only 1 vote,
+    #    below the 5-vote / 30% threshold)
     (
         {
             "EngineA": _make_engine("Trojan.Emotet"),
@@ -118,9 +119,31 @@ MOCK_RESPONSES = [
             "EngineC": _make_engine("Trojan/Win32.Agent"),
             "EngineD": _make_engine("Trojan.Downloader"),  # Trojan + Downloader
         },
-        "Trojan",  # Trojan appears 3 times, Downloader 1, Backdoor 1
+        "Trojan",  # Backdoor=1 < 5 votes, falls back to Trojan
     ),
-    # 10. No match — all labels are generic with no family keyword
+    # 10. Mixed strong non-Trojan: Worms wins (7 votes >= 5 AND >= 30% of 9)
+    (
+        {
+            "E1": _make_engine("Worm.Python.Generic"),
+            "E2": _make_engine("Worm.Agent.Win32"),
+            "E3": _make_engine("Worm:Win32/Agent"),
+            "E4": _make_engine("HEUR:Worm.Python.Generic"),
+            "E5": _make_engine("Net-Worm.Agent"),
+            "E6": _make_engine("W32/Agent.worm"),
+            "E7": _make_engine("Worm.VBAgent"),
+            "T1": _make_engine("Trojan.Siggen"),
+            "T2": _make_engine("Trojan.Win32.Agent"),
+            "T3": _make_engine("Win32:Troj-gen"),
+            "T4": _make_engine("Trojan.Generic.Agent"),
+            "T5": _make_engine("Trojan.Win32.Vilsel"),
+            "T6": _make_engine("Trojan.Vilsel"),
+            "T7": _make_engine("TROJ_VILSEL.SMB"),
+            "T8": _make_engine("Trojan.Win32.Copyself"),
+            "T9": _make_engine("Trojan/Win32.Vilsel"),
+        },
+        "Worms",  # Worms=7 >= 5 votes AND 7/9 >= 30% → Worms wins
+    ),
+    # 11. No match — all labels are generic with no family keyword
     (
         {
             "EngineA": _make_engine("Malware.Generic"),
@@ -140,8 +163,8 @@ MOCK_RESPONSES = [
     # 12. Case-insensitive: "TROJAN" should match "Trojan"
     (
         {
-            "EngineA": _make_engine("TROJAN.Win32.GENERIC"),
-            "EngineB": _make_engine("trojan/agent"),
+            "EngineA": _make_engine("TROJAN.Emotet"),
+            "EngineB": _make_engine("trojan/zbot"),
         },
         "Trojan",
     ),
@@ -166,7 +189,8 @@ class TestExtractFamily:
             "clear_adware",
             "clear_dropper",
             "clear_virus",
-            "mixed_trojan_wins",
+            "mixed_weak_trojan_wins",
+            "mixed_strong_worms_wins",
             "no_match_generic",
             "no_match_undetected",
             "case_insensitive",
@@ -221,8 +245,8 @@ class TestCaching:
         """Second call for the same hash should use cache, not API."""
         cache_path = tmp_path / "vt_cache.json"
 
-        # Pre-populate cache with a known response
-        vt_resp = _make_vt_response({"E1": _make_engine("Trojan.Agent")})
+        # Pre-populate cache with a known response (non-generic Trojan label)
+        vt_resp = _make_vt_response({"E1": _make_engine("Trojan.Emotet")})
         save_cache({"hash_abc": vt_resp}, cache_path)
 
         # Build a minimal set of mock samples (1 benign + 1 cached malware)

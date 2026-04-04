@@ -29,11 +29,114 @@ from src.utils import get_logger, load_json, save_json
 
 logger = get_logger(__name__)
 
-# Pre-compile case-insensitive patterns for each family
+# Pre-compile case-insensitive patterns for each family.
+# Each family maps to multiple variant spellings / abbreviations
+# observed in real AV engine labels on VirusTotal.
+_FAMILY_VARIANT_MAP: Dict[str, List[str]] = {
+    "Adware": [r"adware", r"adw", r"browsermodifier", r"clicker"],
+    "Backdoor": [r"backdoor", r"back[\-\s]?door", r"bkdr", r"backdr",
+                 r"\brat\b", r"remoteadmin"],
+    "Downloader": [r"downloader", r"trojan[\-\.]?downloader", r"dldr",
+                   r"dwnldr", r"download"],
+    "Dropper": [r"dropper", r"trojan[\-\.]?dropper", r"drop",
+                r"tr/dropper", r"injector", r"\binject\b"],
+    "Spyware": [r"spyware", r"spy(?:agent)?", r"trojan[\-\.]?spy",
+                r"trojansspy", r"keylog(?:ger)?", r"infostealer",
+                r"stealer", r"banker", r"\bpws\b", r"\bpsw\b",
+                r"pwstool", r"pswtool", r"pwstealer"],
+    "Trojan": [r"trojan", r"troj", r"trj"],
+    "Virus": [r"virus", r"infector", r"infectpe", r"fileinf"],
+    "Worms": [r"worm", r"email[\-]?worm", r"net[\-]?worm", r"i[\-]?worm",
+              r"w32\.worm", r"win32\.worm"],
+}
+
+# Well-known malware family names → our category.
+# These are checked AFTER pattern matching as a secondary signal.
+# Only includes families with strong consensus in the security community.
+_KNOWN_FAMILY_NAMES: Dict[str, str] = {
+    # ── Original (from VT label analysis) ──
+    "padodor": "Backdoor",     # Well-documented backdoor trojan
+    "dorkbot": "Worms",        # IRC-based worm
+    "dinwod": "Dropper",       # Known dropper family
+    "qukart": "Worms",         # Network worm (also seen as "Quart")
+    "quart": "Worms",          # Alias for Qukart
+    "soltern": "Worms",        # Email worm
+    # ── Added from HA cache analysis ──
+    # Backdoors / RATs
+    "remcos": "Backdoor",      # Commercial RAT
+    "bladabindi": "Backdoor",  # njRAT
+    "njrat": "Backdoor",       # Alias for Bladabindi
+    # Spyware / info-stealers
+    "lokibot": "Spyware",      # Credential-harvesting info-stealer
+    "azorult": "Spyware",      # Info-stealer
+    "pony": "Spyware",         # Pony/Fareit credential stealer
+    # Worms
+    "gamarue": "Worms",        # Andromeda — USB/network worm
+    # Trojans (generic but well-known family names)
+    "razy": "Trojan",          # Browser modifier / crypto stealer
+    "strictor": "Trojan",      # Trojan family
+    "johnnie": "Trojan",       # Generic trojan variant
+    # Droppers
+    "msilperseus": "Trojan",   # Generic .NET trojan
+    "ursu": "Trojan",          # Generic trojan (BitDefender/GData)
+    "istartsur": "Adware",     # iStartSurf browser hijacker
+    # Adware
+    "graftor": "Adware",       # Adware/PUP family (BitDefender)
+}
+
 _FAMILY_PATTERNS: List[Tuple[str, re.Pattern]] = [
-    (fam, re.compile(re.escape(fam), re.IGNORECASE))
-    for fam in cfg.MALWARE_FAMILIES
+    (family, re.compile(pattern, re.IGNORECASE))
+    for family, patterns in _FAMILY_VARIANT_MAP.items()
+    for pattern in patterns
 ]
+
+# Labels that match "Trojan" generically but carry no real family info.
+# These should NOT count as a vote for the "Trojan" family.
+# Built from analysis of actual VT labels in the cached responses.
+_GENERIC_TROJAN_PATTERN: re.Pattern = re.compile(
+    r"(?:"
+    # Explicit generic suffixes
+    r"trojan[:\.\-_/]?\s*(?:generic|agent|gen\b|horse|heur|malware|multi|"
+    r"packed|small|starter|kryptik|crypt|zusy|occamy|casdet|"
+    r"tedy|woreflint|convagent|tiggre|swrort|bulz|sabsik|phonzy|razy|"
+    r"gencirc|ceeinject|skeeyah|ymacco|redcap|wacatac|bearfoos|mauvaise|"
+    r"vilsel|pornoasset|nymaim)"
+    r"|"
+    # Trojan.Win32.Save.a — generic detection name (249 occurrences)
+    r"trojan[:\.\-_/]?\s*(?:win32[:\.])?save\b"
+    r"|"
+    # Win32:Injector-CVE [Trj] and similar generic injector labels
+    r"win32:injector"
+    r"|"
+    # Trojan.Win32.Inject / Trojan.Inject1 — generic injection labels
+    r"trojan[:\.\-_/]?\s*(?:win32[:\.])?inject[0-9]*\b"
+    r"|"
+    # Trojan/Win32.AGeneric
+    r"trojan/win32\.ageneric"
+    r"|"
+    # Win32:TrojanX-gen, Win32:MalwareX-gen, Win32:Evo-gen style
+    r"win32:[a-z]*\-?gen\b"
+    r"|"
+    # Trojan.Win32.Generic!BT, HEUR:Trojan.Win32.Generic
+    r"trojan\.win32\.generic"
+    r"|"
+    # Trojan ( hex ) format — always generic
+    r"trojan\s*\(\s*[0-9a-f]+\s*\)"
+    r"|"
+    # Trj/Genetic.gen, Trj/CI.A, Trj/GdSda — generic Sophos-style
+    r"trj/(?:genetic|ci\.|gdsda)"
+    r"|"
+    # TROJ_GEN.* — Trend Micro generic
+    r"troj_gen\b"
+    r"|"
+    # ML/PE-A + Troj/* — ML-based generic detections
+    r"ml/pe"
+    r"|"
+    # Win-Trojan/Name.size — generic Korean AV pattern (no family info)
+    r"win[\-]?trojan/(?!.*(?:worm|spy|back|down|drop|virus|adw|ransom))"
+    r")",
+    re.IGNORECASE,
+)
 
 
 # ── Cache helpers ──────────────────────────────────────────────────────────
@@ -50,8 +153,18 @@ def load_cache(path: Path = cfg.VT_CACHE_PATH) -> Dict[str, Any]:
 
 
 def save_cache(cache: Dict[str, Any], path: Path = cfg.VT_CACHE_PATH) -> None:
-    """Persist the VT response cache to disk."""
-    save_json(cache, path)
+    """Persist the VT response cache to disk (atomic write).
+
+    Writes to a temporary file first, then renames to the target path.
+    This prevents data loss if the process is interrupted mid-write.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".json.tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(cache, f, indent=2, ensure_ascii=False)
+    # Atomic replace — old file survives if write was interrupted
+    tmp_path.replace(path)
+    logger.debug("Cache saved: %d entries.", len(cache))
 
 
 # ── VT API ─────────────────────────────────────────────────────────────────
@@ -97,9 +210,21 @@ def query_virustotal(sha256: str, api_key: str = VT_API_KEY) -> Optional[Dict[st
 def extract_family_from_response(vt_response: Dict[str, Any]) -> Optional[str]:
     """Determine the malware family from a VT API response.
 
-    Searches all AV engine detection labels for case-insensitive matches
-    against the 8 target family names.  Returns the family that appears most
-    frequently across engines, or ``None`` if no family is matched.
+    For each AV engine label, finds all matching family names.  Uses three
+    rules to avoid the "Trojan-as-prefix" inflation problem:
+
+    1. **Generic Trojan suppression**: Labels like ``Trojan.Generic``,
+       ``Win32:BackdoorX-gen [Trj]`` match a generic Trojan pattern.  The
+       Trojan vote is suppressed, but any *specific* family keyword in the
+       same label (e.g. ``Backdoor``) still counts.
+    2. **Specificity preference**: If a label matches both ``Trojan`` and a
+       more specific family (e.g. ``Trojan.Downloader``), only the specific
+       family is counted.
+    3. **Known family names**: Well-known malware names (e.g. Padodor,
+       Dorkbot) are mapped to their established family even when AV vendors
+       disagree on the prefix.
+    4. **Deduplication**: Each label contributes at most one vote per family
+       (multiple variant patterns matching the same family count once).
 
     Args:
         vt_response: Full JSON response from VT v3 ``/files/{hash}`` endpoint.
@@ -123,14 +248,63 @@ def extract_family_from_response(vt_response: Dict[str, Any]) -> Optional[str]:
         label = engine_info.get("result")
         if not label:
             continue
+
+        # Check if this is a generic trojan label (e.g., Trojan.Generic,
+        # Win32:BackdoorX-gen [Trj]).  Generic labels should NOT contribute
+        # a "Trojan" vote, but they may still contain a real family keyword
+        # (e.g., "BackdoorX" in Win32:BackdoorX-gen), so we do NOT skip
+        # the label entirely — we just suppress the Trojan vote below.
+        is_generic_trojan = bool(_GENERIC_TROJAN_PATTERN.search(label))
+
+        # Collect all families that match this label (deduplicated)
+        matched_families: set = set()
         for family_name, pattern in _FAMILY_PATTERNS:
             if pattern.search(label):
-                family_counts[family_name] += 1
+                matched_families.add(family_name)
+
+        # Check for known malware family names (e.g., Padodor → Backdoor)
+        label_lower = label.lower()
+        for known_name, known_family in _KNOWN_FAMILY_NAMES.items():
+            if known_name in label_lower:
+                matched_families.add(known_family)
+
+        if not matched_families:
+            continue
+
+        # If the label matched the generic trojan filter, or if a specific
+        # family matched alongside Trojan, drop the Trojan vote — it's
+        # either noise or a prefix, not real family information.
+        if "Trojan" in matched_families:
+            if is_generic_trojan or len(matched_families) > 1:
+                matched_families.discard("Trojan")
+
+        for family_name in matched_families:
+            family_counts[family_name] += 1
 
     if not family_counts:
         return None
 
-    # Return the family with the highest count
+    # Prefer a non-Trojan family over Trojan only when the evidence is
+    # strong enough: the non-Trojan candidate must have >= 5 votes AND
+    # at least 30 % of the Trojan vote count.  This avoids reclassifying
+    # a sample as "Downloader" based on 1 engine vs 13 Trojan engines,
+    # while still allowing Worms (7 votes vs 9 Trojan) to win.
+    trojan_votes = family_counts.get("Trojan", 0)
+    non_trojan = {f: c for f, c in family_counts.items() if f != "Trojan"}
+
+    if non_trojan:
+        best_non_trojan = max(non_trojan, key=non_trojan.get)
+        best_nt_votes = non_trojan[best_non_trojan]
+
+        if trojan_votes == 0:
+            # No Trojan votes at all — take the best non-Trojan directly
+            return best_non_trojan
+
+        # Non-Trojan wins only with sufficient evidence
+        if best_nt_votes >= 5 and best_nt_votes >= 0.30 * trojan_votes:
+            return best_non_trojan
+
+    # Fall back to overall most-common (usually Trojan)
     best_family, _ = family_counts.most_common(1)[0]
     return best_family
 
@@ -188,67 +362,75 @@ def label_malbehavd_samples(
     dropped: List[str] = []
     api_calls_made = 0
 
-    for i, sample in enumerate(raw_samples):
-        # Keep benign samples as-is
-        if sample["label"] == cfg.BENIGN_LABEL:
-            labeled.append(sample)
-            continue
+    try:
+        for i, sample in enumerate(raw_samples):
+            # Keep benign samples as-is
+            if sample["label"] == cfg.BENIGN_LABEL:
+                labeled.append(sample)
+                continue
 
-        sha = sample["sha256"]
+            sha = sample["sha256"]
 
-        # Check cache first
-        if sha in cache:
-            vt_resp = cache[sha]
-        else:
-            # Rate-limit before calling the API
-            if api_calls_made > 0:
-                logger.debug("Sleeping %ss for rate limit...", rate_limit_sleep)
-                time.sleep(rate_limit_sleep)
+            # Check cache first
+            if sha in cache:
+                vt_resp = cache[sha]
+            else:
+                # Rate-limit before calling the API
+                if api_calls_made > 0:
+                    logger.debug("Sleeping %ss for rate limit...", rate_limit_sleep)
+                    time.sleep(rate_limit_sleep)
 
-            # Check daily quota before making a new request
-            if max_requests > 0 and api_calls_made >= max_requests:
-                save_cache(cache, cache_path)
-                logger.info(
-                    "Reached max_requests limit (%d). Stopping. "
-                    "Re-run to continue from cache.",
-                    max_requests,
-                )
-                break
+                # Check daily quota before making a new request
+                if max_requests > 0 and api_calls_made >= max_requests:
+                    save_cache(cache, cache_path)
+                    logger.info(
+                        "Reached max_requests limit (%d). Stopping. "
+                        "Re-run to continue from cache.",
+                        max_requests,
+                    )
+                    break
 
-            vt_resp = query_virustotal(sha, api_key)
-            api_calls_made += 1
+                vt_resp = query_virustotal(sha, api_key)
+                api_calls_made += 1
 
-            # Cache even None responses so we don't re-query failures
-            cache[sha] = vt_resp
+                # Cache even None responses so we don't re-query failures
+                cache[sha] = vt_resp
 
-            # Persist cache periodically (every 10 API calls)
-            if api_calls_made % 10 == 0:
-                save_cache(cache, cache_path)
-                logger.info(
-                    "Progress: %d/%d samples processed, %d API calls made.",
-                    i + 1,
-                    len(raw_samples),
-                    api_calls_made,
-                )
+                # Persist cache periodically (every 10 API calls)
+                if api_calls_made % 10 == 0:
+                    save_cache(cache, cache_path)
+                    logger.info(
+                        "Progress: %d/%d samples processed, %d API calls made.",
+                        i + 1,
+                        len(raw_samples),
+                        api_calls_made,
+                    )
 
-        # Extract family label
-        if vt_resp is None:
-            family = None
-        else:
-            family = extract_family_from_response(vt_resp)
+            # Extract family label
+            if vt_resp is None:
+                family = None
+            else:
+                family = extract_family_from_response(vt_resp)
 
-        if family is None:
-            dropped.append(sha)
-            logger.debug("Dropped hash %s — no family match.", sha)
-        else:
-            labeled.append({
-                "sequence": sample["sequence"],
-                "label": family,
-                "sha256": sha,
-            })
+            if family is None:
+                dropped.append(sha)
+                logger.debug("Dropped hash %s — no family match.", sha)
+            else:
+                labeled.append({
+                    "sequence": sample["sequence"],
+                    "label": family,
+                    "sha256": sha,
+                })
 
-    # Final cache save
+    except KeyboardInterrupt:
+        logger.info(
+            "Interrupted by user after %d API calls. Saving cache...",
+            api_calls_made,
+        )
+
+    # Final cache save (runs on normal exit, quota limit, AND KeyboardInterrupt)
     save_cache(cache, cache_path)
+    logger.info("Cache saved with %d entries.", len(cache))
 
     logger.info(
         "Labeling complete: %d labeled (%d benign + %d malware), %d dropped.",

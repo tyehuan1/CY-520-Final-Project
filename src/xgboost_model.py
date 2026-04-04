@@ -1,19 +1,25 @@
 """
 XGBoost model: training with randomized hyperparameter search, saving, loading,
-and inference with confidence scores.
+inference with confidence scores, and end-to-end training pipeline.
+
+Run directly to train::
+
+    python -m src.xgboost_model
 """
 
 import pickle
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
+from sklearn.metrics import classification_report, f1_score
 from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
 from sklearn.utils.class_weight import compute_sample_weight
 from xgboost import XGBClassifier
 
 import config as cfg
-from src.utils import get_logger
+from src.utils import get_logger, load_json, load_pickle, save_json, save_pickle
 
 logger = get_logger(__name__)
 
@@ -131,3 +137,101 @@ def load_model(path: Path) -> XGBClassifier:
         model = pickle.load(f)
     logger.info("XGBoost model loaded from %s.", path)
     return model
+
+
+# ── End-to-end training pipeline ─────────────────────────────────────────
+
+
+def main() -> None:
+    """Train XGBoost on Mal-API-2019 with TF-IDF + statistical + category features."""
+    from src.feature_engineering import build_feature_matrix, build_tfidf_vectorizer
+
+    # ── Load cached preprocessed data ────────────────────────────────────
+    logger.info("Loading cached preprocessed data...")
+    train_samples = load_pickle(cfg.PREPROCESSED_TRAIN_PATH)
+    test_samples = load_pickle(cfg.PREPROCESSED_TEST_PATH)
+    label_encoder = load_pickle(cfg.CACHE_DIR / "label_encoder.pkl")
+
+    y_train = label_encoder.transform([s["label"] for s in train_samples])
+    y_test = label_encoder.transform([s["label"] for s in test_samples])
+
+    # ── Build or load features ──────────────────────────────────────────
+    cache_train = cfg.FEATURES_DIR / "X_train_xgb_v2.pkl"
+    cache_test = cfg.FEATURES_DIR / "X_test_xgb_v2.pkl"
+
+    if cache_train.exists() and cache_test.exists():
+        logger.info("Loading cached feature matrices...")
+        X_train = load_pickle(cache_train)
+        X_test = load_pickle(cache_test)
+    else:
+        logger.info("Building TF-IDF vectorizer...")
+        tfidf_vec = build_tfidf_vectorizer(train_samples)
+
+        logger.info("Building feature matrices...")
+        X_train = build_feature_matrix(train_samples, tfidf_vec)
+        X_test = build_feature_matrix(test_samples, tfidf_vec)
+
+        # Cache features and vectorizer
+        save_pickle(tfidf_vec, cfg.CACHE_DIR / "tfidf_vectorizer_v2.pkl")
+        save_pickle(X_train, cache_train)
+        save_pickle(X_test, cache_test)
+
+    logger.info("Feature matrix shape: train=%s, test=%s", X_train.shape, X_test.shape)
+
+    # ── Train ────────────────────────────────────────────────────────────
+    logger.info("Starting XGBoost training...")
+    start = time.time()
+    model, best_params = train_xgboost(X_train, y_train, label_encoder)
+    elapsed = (time.time() - start) / 60.0
+    logger.info("Training time: %.1f minutes.", elapsed)
+
+    # Save model
+    save_model(model, cfg.XGBOOST_MODEL_DIR / "best_model_v2.pkl")
+    save_pickle(best_params, cfg.XGBOOST_MODEL_DIR / "best_params_v2.pkl")
+
+    # ── Evaluate ─────────────────────────────────────────────────────────
+    preds, probs = predict_with_confidence(model, X_test)
+    test_acc = np.mean(preds == y_test)
+    test_macro_f1 = f1_score(y_test, preds, average="macro")
+
+    train_preds, _ = predict_with_confidence(model, X_train)
+    train_acc = np.mean(train_preds == y_train)
+    train_macro_f1 = f1_score(y_train, train_preds, average="macro")
+
+    report = classification_report(
+        y_test, preds,
+        target_names=label_encoder.classes_,
+        output_dict=True,
+    )
+    report_str = classification_report(
+        y_test, preds,
+        target_names=label_encoder.classes_,
+    )
+
+    logger.info("XGBoost — Train accuracy: %.4f, Train macro-F1: %.4f",
+                train_acc, train_macro_f1)
+    logger.info("XGBoost — Test accuracy: %.4f, Test macro-F1: %.4f",
+                test_acc, test_macro_f1)
+    logger.info("\n%s", report_str)
+
+    # Save results
+    results = {
+        "best_params": best_params,
+        "train_accuracy": round(train_acc, 4),
+        "train_macro_f1": round(train_macro_f1, 4),
+        "test_accuracy": round(test_acc, 4),
+        "test_macro_f1": round(test_macro_f1, 4),
+        "training_minutes": round(elapsed, 1),
+        "feature_matrix_shape": list(X_train.shape),
+        "per_class_f1": {
+            name: round(report[name]["f1-score"], 4)
+            for name in label_encoder.classes_
+        },
+    }
+    cfg.METRICS_DIR.mkdir(parents=True, exist_ok=True)
+    save_json(results, cfg.METRICS_DIR / "xgboost_v2_results.json")
+    logger.info("Results saved.")
+
+
+if __name__ == "__main__":
+    main()

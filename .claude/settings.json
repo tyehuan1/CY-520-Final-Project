@@ -6,7 +6,12 @@
       "Bash(python -c \":*)",
       "Bash(python -m pytest tests/test_virustotal_labeler.py -v)",
       "Bash(python -m pytest tests/test_preprocessing.py -v)",
-      "Bash(python -m pytest tests/test_preprocessing.py::TestStratifiedSplit::test_no_data_leakage -v --tb=short)"
+      "Bash(python -m pytest tests/test_preprocessing.py::TestStratifiedSplit::test_no_data_leakage -v --tb=short)",
+      "Bash(python -u train_xgboost_v2.py)",
+      "Bash(tee results/xgboost_v2_training.log)",
+      "Bash(python -m pytest tests/ -v)",
+      "Read(//c/Users/tyehu/OneDrive/Documents/**)",
+      "Bash(xargs grep:*)"
     ]
   }
 }
