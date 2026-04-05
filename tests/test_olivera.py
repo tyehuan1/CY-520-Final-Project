@@ -14,13 +14,13 @@ from unittest.mock import patch
 import pytest
 
 import config as cfg
-from src.data_loader import load_olivera
-from src.hybrid_analysis_labeler import (
+from src.data_loading.data_loader import load_olivera
+from src.data_labeling.hybrid_analysis_labeler import (
     extract_family_from_ha_response,
     load_cache,
     save_cache,
 )
-from src.olivera_api_map import OLIVERA_API_DECODE
+from src.data_loading.olivera_api_map import OLIVERA_API_DECODE
 
 
 # ---------------------------------------------------------------------------

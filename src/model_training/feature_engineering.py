@@ -14,7 +14,7 @@ from scipy.sparse import issparse
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 import config as cfg
-from src.api_categories import CATEGORIES, get_category
+from src.data_loading.api_categories import CATEGORIES, get_category
 from src.utils import get_logger, load_pickle, save_pickle
 
 logger = get_logger(__name__)

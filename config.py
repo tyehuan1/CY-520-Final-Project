@@ -160,27 +160,11 @@ BINARY_LABEL_ENCODER_PATH = BINARY_CACHE_DIR / "label_encoder.pkl"
 BINARY_FEATURES_DIR = BINARY_CACHE_DIR / "features"
 
 BINARY_XGBOOST_MODEL_DIR = MODELS_DIR / "binary_xgboost"
-BINARY_LSTM_MODEL_DIR = MODELS_DIR / "binary_lstm"
 BINARY_RESULTS_DIR = RESULTS_DIR / "binary"
 BINARY_METRICS_DIR = BINARY_RESULTS_DIR / "metrics"
 BINARY_PLOTS_DIR = BINARY_RESULTS_DIR / "plots"
 
 BINARY_NUM_CLASSES = 2
-
-# Binary XGBoost hyperparameter search
-BINARY_XGBOOST_PARAM_DIST = {
-    "n_estimators": [200, 300, 400],
-    "max_depth": [4, 6, 8],
-    "learning_rate": [0.05, 0.1, 0.2],
-    "subsample": [0.8, 1.0],
-    "colsample_bytree": [0.6, 0.7, 0.8],
-    "min_child_weight": [1, 3, 5],
-    "gamma": [0.0, 0.1],
-}
-BINARY_XGBOOST_N_ITER = 40
-
-# Binary LSTM sequence lengths to test
-BINARY_LSTM_SEQUENCE_LENGTHS = [200, 400]
 
 # =============================================================================
 # VirusTotal

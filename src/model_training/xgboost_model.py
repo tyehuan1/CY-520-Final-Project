@@ -144,7 +144,7 @@ def load_model(path: Path) -> XGBClassifier:
 
 def main() -> None:
     """Train XGBoost on Mal-API-2019 with TF-IDF + statistical + category features."""
-    from src.feature_engineering import build_feature_matrix, build_tfidf_vectorizer
+    from src.model_training.feature_engineering import build_feature_matrix, build_tfidf_vectorizer
 
     # ── Load cached preprocessed data ────────────────────────────────────
     logger.info("Loading cached preprocessed data...")

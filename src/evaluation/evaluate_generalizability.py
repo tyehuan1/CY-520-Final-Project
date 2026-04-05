@@ -20,7 +20,7 @@ Additionally reports domain-shift diagnostics:
 
 Usage::
 
-    python evaluate_generalizability.py
+    python -m src.evaluation.evaluate_generalizability
 """
 
 import numpy as np
@@ -34,29 +34,29 @@ from sklearn.metrics import (
 )
 
 import config as cfg
-from src.evaluation import (
+from src.evaluation.metrics import (
     compute_all_metrics,
     plot_confusion_matrix,
     plot_per_class_f1,
     plot_roc_curves,
 )
-from src.feature_engineering import (
+from src.model_training.feature_engineering import (
     CATEGORY_FEATURE_NAMES,
     STATISTICAL_FEATURE_NAMES,
     compute_category_features,
     compute_statistical_features,
     tfidf_transform,
 )
-from src.lstm_model import load_model as load_lstm_model
-from src.lstm_model import predict_with_confidence as lstm_predict
-from src.preprocessing import (
+from src.model_training.lstm_model import load_model as load_lstm_model
+from src.model_training.lstm_model import predict_with_confidence as lstm_predict
+from src.data_loading.preprocessing import (
     compute_unk_ratio,
     pad_sequences,
     preprocess_malbehavd_sequences,
 )
 from src.utils import get_logger, load_json, load_pickle, save_json
-from src.xgboost_model import load_model as load_xgb_model
-from src.xgboost_model import predict_with_confidence as xgb_predict
+from src.model_training.xgboost_model import load_model as load_xgb_model
+from src.model_training.xgboost_model import predict_with_confidence as xgb_predict
 
 logger = get_logger(__name__)
 
@@ -434,7 +434,7 @@ def main() -> None:
 
     # ── Ensemble ─────────────────────────────────────────────────────────
     logger.info("Running Ensemble predictions on MalBehavD...")
-    from src.ensemble_model import load_model as load_ensemble_model
+    from src.model_training.ensemble_model import load_model as load_ensemble_model
 
     ensemble_path = cfg.ENSEMBLE_MODEL_DIR / "ensemble_model.pkl"
     if not ensemble_path.exists():

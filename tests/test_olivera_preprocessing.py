@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import config as cfg
-from src.preprocessing import (
+from src.data_loading.preprocessing import (
     deduplicate_consecutive,
     olivera_preprocess_samples,
     olivera_style_preprocess,
@@ -107,7 +107,7 @@ class TestOliveraPreprocessMalAPI:
 
     @pytest.fixture(scope="class")
     def malapi_samples(self):
-        from src.data_loader import load_mal_api
+        from src.data_loading.data_loader import load_mal_api
         return load_mal_api()
 
     @pytest.fixture(scope="class")

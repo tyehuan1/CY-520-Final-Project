@@ -26,10 +26,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 import config as cfg
-from src.data_loader import load_olivera
-from src.olivera_api_map import OLIVERA_API_DECODE
+from src.data_loading.data_loader import load_olivera
+from src.data_loading.olivera_api_map import OLIVERA_API_DECODE
 from src.utils import get_logger, load_json, save_json
-from src.virustotal_labeler import extract_family_from_response
+from src.data_labeling.virustotal_labeler import extract_family_from_response
 
 logger = get_logger(__name__)
 

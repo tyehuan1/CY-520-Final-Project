@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 
 import config as cfg
-from src.data_loader import load_mal_api
-from src.feature_engineering import (
+from src.data_loading.data_loader import load_mal_api
+from src.model_training.feature_engineering import (
     build_feature_matrix,
     build_tfidf_vectorizer,
     compute_category_features,
@@ -15,7 +15,7 @@ from src.feature_engineering import (
     get_feature_names,
     tfidf_transform,
 )
-from src.preprocessing import clean_samples, stratified_split
+from src.data_loading.preprocessing import clean_samples, stratified_split
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
@@ -191,7 +191,7 @@ class TestCategoryFeatures:
         samples = [{"sequence": ["ntcreatefile", "ntreadfile", "regopenkeyexa", "connect"]}]
         features = compute_category_features(samples)
         # filesystem=2/4=0.5, registry=1/4=0.25, network=1/4=0.25, rest=0
-        from src.api_categories import CATEGORIES
+        from src.data_loading.api_categories import CATEGORIES
         cat_idx = {c: i for i, c in enumerate(CATEGORIES)}
         assert abs(features[0, cat_idx["filesystem"]] - 0.5) < 1e-9
         assert abs(features[0, cat_idx["registry"]] - 0.25) < 1e-9

@@ -6,7 +6,7 @@ all plots and SHAP explanations.  Outputs saved under ``results/``.
 
 Usage::
 
-    python evaluate_models.py
+    python -m src.evaluation.evaluate_models
 """
 
 import numpy as np
@@ -14,7 +14,7 @@ from sklearn.metrics import classification_report
 from tensorflow.keras.utils import to_categorical
 
 import config as cfg
-from src.evaluation import (
+from src.evaluation.metrics import (
     compute_all_metrics,
     plot_class_distribution,
     plot_confusion_matrix,
@@ -24,18 +24,18 @@ from src.evaluation import (
     plot_three_model_comparison,
     run_shap_analysis,
 )
-from src.feature_engineering import (
+from src.model_training.feature_engineering import (
     CATEGORY_FEATURE_NAMES,
     STATISTICAL_FEATURE_NAMES,
     build_feature_matrix,
     get_feature_names,
 )
-from src.lstm_model import load_model as load_lstm_model
-from src.lstm_model import predict_with_confidence as lstm_predict
-from src.preprocessing import pad_sequences
+from src.model_training.lstm_model import load_model as load_lstm_model
+from src.model_training.lstm_model import predict_with_confidence as lstm_predict
+from src.data_loading.preprocessing import pad_sequences
 from src.utils import get_logger, load_json, load_pickle, save_json
-from src.xgboost_model import load_model as load_xgb_model
-from src.xgboost_model import predict_with_confidence as xgb_predict
+from src.model_training.xgboost_model import load_model as load_xgb_model
+from src.model_training.xgboost_model import predict_with_confidence as xgb_predict
 
 logger = get_logger(__name__)
 
@@ -237,12 +237,12 @@ def main() -> None:
     logger.info("EVALUATING ENSEMBLE (F1-weighted XGBoost + LSTM)")
     logger.info("=" * 70)
 
-    from src.ensemble_model import load_model as load_ensemble_model
+    from src.model_training.ensemble_model import load_model as load_ensemble_model
 
     ensemble_path = cfg.ENSEMBLE_MODEL_DIR / "ensemble_model.pkl"
     if not ensemble_path.exists():
         logger.warning(
-            "Ensemble model not found at %s. Run build_ensemble.py first. "
+            "Ensemble model not found at %s. Run python -m src.model_training.ensemble_model first. "
             "Skipping ensemble evaluation.",
             ensemble_path,
         )

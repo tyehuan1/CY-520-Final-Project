@@ -7,7 +7,7 @@ from collections import Counter
 import pytest
 
 import config as cfg
-from src.data_loader import load_mal_api, load_malbehavd
+from src.data_loading.data_loader import load_mal_api, load_malbehavd
 
 
 # ---------------------------------------------------------------------------

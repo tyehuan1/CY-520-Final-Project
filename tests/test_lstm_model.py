@@ -13,7 +13,7 @@ import pytest
 import tensorflow as tf
 
 import config as cfg
-from src.lstm_model import (
+from src.model_training.lstm_model import (
     build_lstm_model,
     compute_class_weights,
     load_model,

@@ -11,6 +11,10 @@ XGBoost's feature engineering misses sequential patterns.
 
 The class exposes the same ``predict_with_confidence`` interface as the
 base models, and can process raw API-call sequences end-to-end.
+
+Run directly to build the ensemble from trained base models::
+
+    python -m src.model_training.ensemble_model
 """
 
 import pickle
@@ -20,7 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 import config as cfg
-from src.utils import get_logger
+from src.utils import get_logger, load_json, load_pickle
 
 logger = get_logger(__name__)
 
@@ -107,7 +111,7 @@ class EnsembleClassifier:
         Returns:
             Dense feature matrix of shape ``(n_samples, n_features)``.
         """
-        from src.feature_engineering import (
+        from src.model_training.feature_engineering import (
             compute_category_features,
             compute_statistical_features,
             tfidf_transform,
@@ -130,7 +134,7 @@ class EnsembleClassifier:
         Returns:
             Padded integer array of shape ``(n_samples, seq_len)``.
         """
-        from src.preprocessing import encode_sequence, pad_sequences
+        from src.data_loading.preprocessing import encode_sequence, pad_sequences
 
         if samples and "encoded" in samples[0]:
             encoded = [s["encoded"] for s in samples]
@@ -151,8 +155,8 @@ class EnsembleClassifier:
             Tuple of (predicted_labels, probabilities) where labels has shape
             ``(n,)`` and probabilities has shape ``(n, num_classes)``.
         """
-        from src.lstm_model import predict_with_confidence as lstm_predict
-        from src.xgboost_model import predict_with_confidence as xgb_predict
+        from src.model_training.lstm_model import predict_with_confidence as lstm_predict
+        from src.model_training.xgboost_model import predict_with_confidence as xgb_predict
 
         # Get probability outputs from both models
         X_xgb = self._build_xgb_features(samples)
@@ -266,3 +270,83 @@ def load_model(path: Path) -> EnsembleClassifier:
         ensemble = pickle.load(f)
     logger.info("Ensemble model loaded from %s.", path)
     return ensemble
+
+
+# ── End-to-end build pipeline ────────────────────────────────────────────
+
+
+def main() -> None:
+    """Build the per-class F1-weighted ensemble from trained base models."""
+    from src.model_training.lstm_model import load_model as load_lstm_model
+    from src.model_training.xgboost_model import load_model as load_xgb_model
+
+    # ── Load base models ──────────────────────────────────────────────────
+    logger.info("Loading base models...")
+    xgb_model = load_xgb_model(cfg.XGBOOST_MODEL_DIR / "best_model.pkl")
+    lstm_model = load_lstm_model(
+        cfg.LSTM_MODEL_DIR / f"best_len{cfg.LSTM_BEST_SEQ_LEN}.keras",
+    )
+
+    # ── Load preprocessors ────────────────────────────────────────────────
+    tfidf_vectorizer = load_pickle(cfg.CACHE_DIR / "tfidf_vectorizer.pkl")
+    label_encoder = load_pickle(cfg.CACHE_DIR / "label_encoder.pkl")
+    vocab = load_json(cfg.VOCABULARY_PATH)
+
+    # ── Load per-class F1 from evaluation metrics ─────────────────────────
+    xgb_eval = load_json(cfg.METRICS_DIR / "xgboost_evaluation.json")
+    lstm_eval = load_json(cfg.METRICS_DIR / "lstm_evaluation.json")
+
+    xgb_class_f1 = {
+        name: metrics["f1"]
+        for name, metrics in xgb_eval["test"]["per_class"].items()
+    }
+    lstm_class_f1 = {
+        name: metrics["f1"]
+        for name, metrics in lstm_eval["test"]["per_class"].items()
+    }
+
+    logger.info("Per-class F1 scores used for weighting:")
+    for name in label_encoder.classes_:
+        logger.info(
+            "  %12s: XGB=%.4f  LSTM=%.4f",
+            name, xgb_class_f1[name], lstm_class_f1[name],
+        )
+
+    # ── Build ensemble ────────────────────────────────────────────────────
+    confidence_threshold = 0.30
+
+    ensemble = EnsembleClassifier(
+        xgb_model=xgb_model,
+        lstm_model=lstm_model,
+        tfidf_vectorizer=tfidf_vectorizer,
+        label_encoder=label_encoder,
+        vocab=vocab,
+        xgb_class_f1=xgb_class_f1,
+        lstm_class_f1=lstm_class_f1,
+        confidence_threshold=confidence_threshold,
+    )
+
+    # ── Save ──────────────────────────────────────────────────────────────
+    save_path = cfg.ENSEMBLE_MODEL_DIR / "ensemble_model.pkl"
+    save_model(ensemble, save_path)
+    logger.info("Ensemble model built and saved to %s", save_path)
+
+    # Print weight summary
+    print(f"\n{'='*55}")
+    print("Ensemble Model — Confidence-Gated, Per-Class Weights")
+    print(f"{'='*55}")
+    print(f"Confidence threshold: {ensemble.confidence_threshold:.2f}")
+    print(f"  XGBoost max_prob >= {ensemble.confidence_threshold:.2f} -> XGBoost alone")
+    print(f"  XGBoost max_prob <  {ensemble.confidence_threshold:.2f} -> F1-weighted blend")
+    print()
+    print(f"{'Class':>12}  {'XGB F1':>8}  {'LSTM F1':>8}  {'XGB Wt':>8}  {'LSTM Wt':>8}")
+    print(f"{'-'*55}")
+    for i, name in enumerate(ensemble.class_names):
+        print(
+            f"{name:>12}  {xgb_class_f1[name]:>8.4f}  {lstm_class_f1[name]:>8.4f}"
+            f"  {ensemble.xgb_weights[i]:>8.3f}  {ensemble.lstm_weights[i]:>8.3f}"
+        )
+
+
+if __name__ == "__main__":
+    main()

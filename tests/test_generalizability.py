@@ -13,14 +13,14 @@ import numpy as np
 import pytest
 
 import config as cfg
-from src.feature_engineering import (
+from src.model_training.feature_engineering import (
     CATEGORY_FEATURE_NAMES,
     STATISTICAL_FEATURE_NAMES,
     compute_category_features,
     compute_statistical_features,
     tfidf_transform,
 )
-from src.preprocessing import (
+from src.data_loading.preprocessing import (
     compute_unk_ratio,
     pad_sequences,
     preprocess_malbehavd_sequences,

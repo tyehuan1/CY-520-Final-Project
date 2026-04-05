@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 import config as cfg
-from src.data_loader import load_mal_api
-from src.preprocessing import (
+from src.data_loading.data_loader import load_mal_api
+from src.data_loading.preprocessing import (
     build_vocabulary,
     clean_samples,
     clean_sequence,

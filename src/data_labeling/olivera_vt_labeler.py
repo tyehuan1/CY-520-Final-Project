@@ -9,7 +9,7 @@ Reuses the same family extraction logic as the MalBehavD VT labeler
 
 Usage (as a script)::
 
-    python -m src.olivera_vt_labeler --max-requests 490
+    python -m src.data_labeling.olivera_vt_labeler --max-requests 490
 """
 
 import argparse
@@ -20,10 +20,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import config as cfg
-from src.data_loader import load_olivera
-from src.olivera_api_map import OLIVERA_API_DECODE
+from src.data_loading.data_loader import load_olivera
+from src.data_loading.olivera_api_map import OLIVERA_API_DECODE
 from src.utils import get_logger, save_json
-from src.virustotal_labeler import (
+from src.data_labeling.virustotal_labeler import (
     VT_API_KEY,
     extract_family_from_response,
     load_cache,

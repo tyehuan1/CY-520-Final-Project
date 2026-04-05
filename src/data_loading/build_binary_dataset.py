@@ -19,7 +19,7 @@ Preprocessing:
 
 Usage::
 
-    python build_binary_dataset.py
+    python -m src.data_loading.build_binary_dataset
 """
 
 import numpy as np
@@ -27,9 +27,9 @@ from collections import Counter
 from sklearn.preprocessing import LabelEncoder
 
 import config as cfg
-from src.data_loader import load_mal_api, load_olivera
-from src.olivera_api_map import OLIVERA_API_DECODE
-from src.preprocessing import (
+from src.data_loading.data_loader import load_mal_api, load_olivera
+from src.data_loading.olivera_api_map import OLIVERA_API_DECODE
+from src.data_loading.preprocessing import (
     build_vocabulary,
     encode_samples,
     olivera_preprocess_samples,

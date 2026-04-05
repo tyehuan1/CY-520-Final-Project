@@ -28,7 +28,7 @@ from tensorflow.keras import layers
 from tensorflow.keras.utils import to_categorical
 
 import config as cfg
-from src.preprocessing import pad_sequences
+from src.data_loading.preprocessing import pad_sequences
 from src.utils import get_logger, load_json, load_pickle, save_json
 
 logger = get_logger(__name__)

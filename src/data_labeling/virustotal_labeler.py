@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 import config as cfg
-from src.data_loader import load_malbehavd
+from src.data_loading.data_loader import load_malbehavd
 from src.utils import get_logger, load_json, save_json
 
 logger = get_logger(__name__)

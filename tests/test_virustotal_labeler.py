@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import config as cfg
-from src.virustotal_labeler import (
+from src.data_labeling.virustotal_labeler import (
     extract_family_from_labels,
     extract_family_from_response,
     label_malbehavd_samples,
@@ -255,8 +255,8 @@ class TestCaching:
             {"sequence": ["NtClose"], "label": cfg.MALWARE_LABEL, "sha256": "hash_abc"},
         ]
 
-        with patch("src.virustotal_labeler.load_malbehavd", return_value=mock_samples):
-            with patch("src.virustotal_labeler.query_virustotal") as mock_query:
+        with patch("src.data_labeling.virustotal_labeler.load_malbehavd", return_value=mock_samples):
+            with patch("src.data_labeling.virustotal_labeler.query_virustotal") as mock_query:
                 labeled, dropped = label_malbehavd_samples(
                     api_key="fake_key",
                     cache_path=cache_path,
@@ -289,11 +289,11 @@ class TestRateLimiting:
 
         vt_resp = _make_vt_response({"E1": _make_engine("Trojan.Agent")})
 
-        with patch("src.virustotal_labeler.load_malbehavd", return_value=mock_samples):
+        with patch("src.data_labeling.virustotal_labeler.load_malbehavd", return_value=mock_samples):
             with patch(
-                "src.virustotal_labeler.query_virustotal", return_value=vt_resp
+                "src.data_labeling.virustotal_labeler.query_virustotal", return_value=vt_resp
             ):
-                with patch("src.virustotal_labeler.time.sleep") as mock_sleep:
+                with patch("src.data_labeling.virustotal_labeler.time.sleep") as mock_sleep:
                     labeled, dropped = label_malbehavd_samples(
                         api_key="fake_key",
                         cache_path=cache_path,
@@ -313,11 +313,11 @@ class TestRateLimiting:
 
         vt_resp = _make_vt_response({"E1": _make_engine("Trojan.Agent")})
 
-        with patch("src.virustotal_labeler.load_malbehavd", return_value=mock_samples):
+        with patch("src.data_labeling.virustotal_labeler.load_malbehavd", return_value=mock_samples):
             with patch(
-                "src.virustotal_labeler.query_virustotal", return_value=vt_resp
+                "src.data_labeling.virustotal_labeler.query_virustotal", return_value=vt_resp
             ):
-                with patch("src.virustotal_labeler.time.sleep") as mock_sleep:
+                with patch("src.data_labeling.virustotal_labeler.time.sleep") as mock_sleep:
                     label_malbehavd_samples(
                         api_key="fake_key",
                         cache_path=cache_path,
@@ -342,9 +342,9 @@ class TestDroppedSamples:
         ]
         vt_resp = _make_vt_response({"E1": _make_engine("Malware.Generic")})
 
-        with patch("src.virustotal_labeler.load_malbehavd", return_value=mock_samples):
+        with patch("src.data_labeling.virustotal_labeler.load_malbehavd", return_value=mock_samples):
             with patch(
-                "src.virustotal_labeler.query_virustotal", return_value=vt_resp
+                "src.data_labeling.virustotal_labeler.query_virustotal", return_value=vt_resp
             ):
                 labeled, dropped = label_malbehavd_samples(
                     api_key="fake_key",
@@ -363,9 +363,9 @@ class TestDroppedSamples:
             {"sequence": ["NtClose"], "label": cfg.MALWARE_LABEL, "sha256": "not_found"},
         ]
 
-        with patch("src.virustotal_labeler.load_malbehavd", return_value=mock_samples):
+        with patch("src.data_labeling.virustotal_labeler.load_malbehavd", return_value=mock_samples):
             with patch(
-                "src.virustotal_labeler.query_virustotal", return_value=None
+                "src.data_labeling.virustotal_labeler.query_virustotal", return_value=None
             ):
                 labeled, dropped = label_malbehavd_samples(
                     api_key="fake_key",
@@ -393,9 +393,9 @@ class TestOutputFormat:
         ]
         vt_resp = _make_vt_response({"E1": _make_engine("Backdoor.Win32.Agent")})
 
-        with patch("src.virustotal_labeler.load_malbehavd", return_value=mock_samples):
+        with patch("src.data_labeling.virustotal_labeler.load_malbehavd", return_value=mock_samples):
             with patch(
-                "src.virustotal_labeler.query_virustotal", return_value=vt_resp
+                "src.data_labeling.virustotal_labeler.query_virustotal", return_value=vt_resp
             ):
                 labeled, dropped = label_malbehavd_samples(
                     api_key="fake_key",

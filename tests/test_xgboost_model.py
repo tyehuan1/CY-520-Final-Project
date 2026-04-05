@@ -9,7 +9,7 @@ import pytest
 from sklearn.preprocessing import LabelEncoder
 
 import config as cfg
-from src.xgboost_model import (
+from src.model_training.xgboost_model import (
     load_model,
     predict_with_confidence,
     save_model,
