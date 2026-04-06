@@ -255,12 +255,12 @@ def load_model(path: Path) -> keras.Model:
 def main() -> None:
     """Train Bidirectional LSTM at multiple sequence lengths on Mal-API-2019."""
 
-    # ── Load cached data ─────────────────────────────────────────────────
-    logger.info("Loading cached preprocessed data...")
-    train_samples = load_pickle(cfg.PREPROCESSED_TRAIN_PATH)
-    test_samples = load_pickle(cfg.PREPROCESSED_TEST_PATH)
-    vocab = load_json(cfg.VOCABULARY_PATH)
-    label_encoder = load_pickle(cfg.CACHE_DIR / "label_encoder.pkl")
+    # ── Load no-Trojan data ───────────────────────────────────────────────
+    logger.info("Loading no-Trojan preprocessed data (7-class)...")
+    train_samples = load_pickle(cfg.NO_TROJAN_TRAIN_PATH)
+    test_samples = load_pickle(cfg.NO_TROJAN_TEST_PATH)
+    vocab = load_json(cfg.NO_TROJAN_VOCABULARY_PATH)
+    label_encoder = load_pickle(cfg.NO_TROJAN_LABEL_ENCODER_PATH)
 
     vocab_size = len(vocab)
     num_classes = len(label_encoder.classes_)
@@ -274,8 +274,9 @@ def main() -> None:
     y_train_onehot = to_categorical(y_train_int, num_classes=num_classes)
 
     logger.info(
-        "Data loaded: %d train, %d test, vocab=%d, classes=%d.",
+        "Data loaded: %d train, %d test, vocab=%d, classes=%d (%s).",
         len(train_encoded), len(test_encoded), vocab_size, num_classes,
+        list(label_encoder.classes_),
     )
 
     # ── Train at each sequence length ────────────────────────────────────
@@ -293,7 +294,7 @@ def main() -> None:
         model = build_lstm_model(vocab_size, seq_len, num_classes)
         model.summary(print_fn=lambda x: logger.info(x))
 
-        model_path = cfg.LSTM_MODEL_DIR / f"best_len{seq_len}.keras"
+        model_path = cfg.NO_TROJAN_LSTM_MODEL_DIR / f"best_len{seq_len}.keras"
         start = time.time()
         history = train_lstm(
             model, X_train, y_train_onehot, y_train_int, model_path,
@@ -347,10 +348,10 @@ def main() -> None:
             },
         }
 
-        cfg.METRICS_DIR.mkdir(parents=True, exist_ok=True)
+        cfg.NO_TROJAN_METRICS_DIR.mkdir(parents=True, exist_ok=True)
         save_json(
             results[seq_len],
-            cfg.METRICS_DIR / f"lstm_len{seq_len}_results.json",
+            cfg.NO_TROJAN_METRICS_DIR / f"lstm_len{seq_len}_results.json",
         )
 
     # ── Select best model ────────────────────────────────────────────────
@@ -364,8 +365,8 @@ def main() -> None:
         "best_seq_len": best_len,
         "all_results": {str(k): v for k, v in results.items()},
     }
-    save_json(summary, cfg.METRICS_DIR / "lstm_comparison.json")
-    logger.info("All LSTM results saved to %s.", cfg.METRICS_DIR / "lstm_comparison.json")
+    save_json(summary, cfg.NO_TROJAN_METRICS_DIR / "lstm_comparison.json")
+    logger.info("All LSTM results saved to %s.", cfg.NO_TROJAN_METRICS_DIR / "lstm_comparison.json")
 
 
 if __name__ == "__main__":

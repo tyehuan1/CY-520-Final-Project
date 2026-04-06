@@ -38,9 +38,15 @@ class TestMalApi:
         assert len(mal_api_samples) == cfg.MAL_API_EXPECTED_SAMPLES
 
     def test_all_families_present(self, mal_api_samples):
-        """All 8 expected malware family names must appear."""
+        """All 8 raw Mal-API family names must appear in the dataset."""
         labels = {s["label"] for s in mal_api_samples}
-        assert labels == set(cfg.MALWARE_FAMILIES)
+        # The raw dataset always has 8 families (including Trojan).
+        # cfg.MALWARE_FAMILIES may exclude Trojan for Stage-2 models.
+        raw_families = {
+            "Adware", "Backdoor", "Downloader", "Dropper",
+            "Spyware", "Trojan", "Virus", "Worms",
+        }
+        assert labels == raw_families
 
     def test_label_distribution(self, mal_api_samples):
         """Verify per-family counts match the known distribution."""

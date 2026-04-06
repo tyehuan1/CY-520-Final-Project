@@ -280,21 +280,21 @@ def main() -> None:
     from src.model_training.lstm_model import load_model as load_lstm_model
     from src.model_training.xgboost_model import load_model as load_xgb_model
 
-    # ── Load base models ──────────────────────────────────────────────────
-    logger.info("Loading base models...")
-    xgb_model = load_xgb_model(cfg.XGBOOST_MODEL_DIR / "best_model.pkl")
+    # ── Load no-Trojan base models ──────────────────────────────────────
+    logger.info("Loading no-Trojan base models (7-class)...")
+    xgb_model = load_xgb_model(cfg.NO_TROJAN_XGBOOST_MODEL_DIR / "best_model.pkl")
     lstm_model = load_lstm_model(
-        cfg.LSTM_MODEL_DIR / f"best_len{cfg.LSTM_BEST_SEQ_LEN}.keras",
+        cfg.NO_TROJAN_LSTM_MODEL_DIR / f"best_len{cfg.LSTM_BEST_SEQ_LEN}.keras",
     )
 
     # ── Load preprocessors ────────────────────────────────────────────────
-    tfidf_vectorizer = load_pickle(cfg.CACHE_DIR / "tfidf_vectorizer.pkl")
-    label_encoder = load_pickle(cfg.CACHE_DIR / "label_encoder.pkl")
-    vocab = load_json(cfg.VOCABULARY_PATH)
+    tfidf_vectorizer = load_pickle(cfg.NO_TROJAN_CACHE_DIR / "tfidf_vectorizer.pkl")
+    label_encoder = load_pickle(cfg.NO_TROJAN_LABEL_ENCODER_PATH)
+    vocab = load_json(cfg.NO_TROJAN_VOCABULARY_PATH)
 
     # ── Load per-class F1 from evaluation metrics ─────────────────────────
-    xgb_eval = load_json(cfg.METRICS_DIR / "xgboost_evaluation.json")
-    lstm_eval = load_json(cfg.METRICS_DIR / "lstm_evaluation.json")
+    xgb_eval = load_json(cfg.NO_TROJAN_METRICS_DIR / "xgboost_evaluation.json")
+    lstm_eval = load_json(cfg.NO_TROJAN_METRICS_DIR / "lstm_evaluation.json")
 
     xgb_class_f1 = {
         name: metrics["f1"]
@@ -327,7 +327,7 @@ def main() -> None:
     )
 
     # ── Save ──────────────────────────────────────────────────────────────
-    save_path = cfg.ENSEMBLE_MODEL_DIR / "ensemble_model.pkl"
+    save_path = cfg.NO_TROJAN_ENSEMBLE_MODEL_DIR / "ensemble_model.pkl"
     save_model(ensemble, save_path)
     logger.info("Ensemble model built and saved to %s", save_path)
 

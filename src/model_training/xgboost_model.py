@@ -76,7 +76,7 @@ def train_xgboost(
         scoring="f1_macro",
         cv=cv,
         random_state=random_seed,
-        n_jobs=-1,
+        n_jobs=1,
         verbose=1,
         refit=True,
     )
@@ -146,18 +146,24 @@ def main() -> None:
     """Train XGBoost on Mal-API-2019 with TF-IDF + statistical + category features."""
     from src.model_training.feature_engineering import build_feature_matrix, build_tfidf_vectorizer
 
-    # ── Load cached preprocessed data ────────────────────────────────────
-    logger.info("Loading cached preprocessed data...")
-    train_samples = load_pickle(cfg.PREPROCESSED_TRAIN_PATH)
-    test_samples = load_pickle(cfg.PREPROCESSED_TEST_PATH)
-    label_encoder = load_pickle(cfg.CACHE_DIR / "label_encoder.pkl")
+    # ── Load no-Trojan preprocessed data ──────────────────────────────────
+    logger.info("Loading no-Trojan preprocessed data (7-class)...")
+    train_samples = load_pickle(cfg.NO_TROJAN_TRAIN_PATH)
+    test_samples = load_pickle(cfg.NO_TROJAN_TEST_PATH)
+    label_encoder = load_pickle(cfg.NO_TROJAN_LABEL_ENCODER_PATH)
 
     y_train = label_encoder.transform([s["label"] for s in train_samples])
     y_test = label_encoder.transform([s["label"] for s in test_samples])
 
+    logger.info(
+        "Dataset: %d train, %d test, classes=%s.",
+        len(train_samples), len(test_samples), list(label_encoder.classes_),
+    )
+
     # ── Build or load features ──────────────────────────────────────────
-    cache_train = cfg.FEATURES_DIR / "X_train_xgb_v2.pkl"
-    cache_test = cfg.FEATURES_DIR / "X_test_xgb_v2.pkl"
+    cfg.NO_TROJAN_FEATURES_DIR.mkdir(parents=True, exist_ok=True)
+    cache_train = cfg.NO_TROJAN_FEATURES_DIR / "X_train_xgb.pkl"
+    cache_test = cfg.NO_TROJAN_FEATURES_DIR / "X_test_xgb.pkl"
 
     if cache_train.exists() and cache_test.exists():
         logger.info("Loading cached feature matrices...")
@@ -172,22 +178,23 @@ def main() -> None:
         X_test = build_feature_matrix(test_samples, tfidf_vec)
 
         # Cache features and vectorizer
-        save_pickle(tfidf_vec, cfg.CACHE_DIR / "tfidf_vectorizer_v2.pkl")
+        save_pickle(tfidf_vec, cfg.NO_TROJAN_CACHE_DIR / "tfidf_vectorizer.pkl")
         save_pickle(X_train, cache_train)
         save_pickle(X_test, cache_test)
 
     logger.info("Feature matrix shape: train=%s, test=%s", X_train.shape, X_test.shape)
 
     # ── Train ────────────────────────────────────────────────────────────
-    logger.info("Starting XGBoost training...")
+    logger.info("Starting XGBoost training (7-class, no Trojan)...")
     start = time.time()
     model, best_params = train_xgboost(X_train, y_train, label_encoder)
     elapsed = (time.time() - start) / 60.0
     logger.info("Training time: %.1f minutes.", elapsed)
 
     # Save model
-    save_model(model, cfg.XGBOOST_MODEL_DIR / "best_model_v2.pkl")
-    save_pickle(best_params, cfg.XGBOOST_MODEL_DIR / "best_params_v2.pkl")
+    cfg.NO_TROJAN_XGBOOST_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    save_model(model, cfg.NO_TROJAN_XGBOOST_MODEL_DIR / "best_model.pkl")
+    save_pickle(best_params, cfg.NO_TROJAN_XGBOOST_MODEL_DIR / "best_params.pkl")
 
     # ── Evaluate ─────────────────────────────────────────────────────────
     preds, probs = predict_with_confidence(model, X_test)
@@ -228,8 +235,8 @@ def main() -> None:
             for name in label_encoder.classes_
         },
     }
-    cfg.METRICS_DIR.mkdir(parents=True, exist_ok=True)
-    save_json(results, cfg.METRICS_DIR / "xgboost_v2_results.json")
+    cfg.NO_TROJAN_METRICS_DIR.mkdir(parents=True, exist_ok=True)
+    save_json(results, cfg.NO_TROJAN_METRICS_DIR / "xgboost_results.json")
     logger.info("Results saved.")
 
 

@@ -252,7 +252,12 @@ class TestStratifiedSplit:
         train_counts = Counter(s["label"] for s in train_samples)
         test_counts = Counter(s["label"] for s in test_samples)
 
-        for label in cfg.MALWARE_FAMILIES:
+        # Use the full 8-family set since raw_samples includes Trojan
+        raw_families = [
+            "Adware", "Backdoor", "Downloader", "Dropper",
+            "Spyware", "Trojan", "Virus", "Worms",
+        ]
+        for label in raw_families:
             orig_ratio = orig_counts[label] / len(raw_samples)
             train_ratio = train_counts[label] / len(train_samples)
             test_ratio = test_counts[label] / len(test_samples)

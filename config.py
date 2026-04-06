@@ -30,17 +30,37 @@ VOCABULARY_PATH = CACHE_DIR / "vocabulary.json"
 MALAPI_OLIVERA_LIMITED_PATH = CACHE_DIR / "malapi_olivera_limited.pkl"
 FEATURES_DIR = CACHE_DIR / "features"
 
+# Stage-2 no-Trojan filtered data (7-class family classification)
+NO_TROJAN_CACHE_DIR = CACHE_DIR / "no_trojan"
+NO_TROJAN_TRAIN_PATH = NO_TROJAN_CACHE_DIR / "preprocessed_train.pkl"
+NO_TROJAN_TEST_PATH = NO_TROJAN_CACHE_DIR / "preprocessed_test.pkl"
+NO_TROJAN_VOCABULARY_PATH = NO_TROJAN_CACHE_DIR / "vocabulary.json"
+NO_TROJAN_LABEL_ENCODER_PATH = NO_TROJAN_CACHE_DIR / "label_encoder.pkl"
+NO_TROJAN_FEATURES_DIR = NO_TROJAN_CACHE_DIR / "features"
+NO_TROJAN_MALBEHAVD_PATH = NO_TROJAN_CACHE_DIR / "malbehavd_labeled.json"
+
 # Models
 MODELS_DIR = PROJECT_ROOT / "models"
 XGBOOST_MODEL_DIR = MODELS_DIR / "xgboost"
 LSTM_MODEL_DIR = MODELS_DIR / "lstm"
 ENSEMBLE_MODEL_DIR = MODELS_DIR / "ensemble"
 
+# Stage-2 no-Trojan models (7-class)
+NO_TROJAN_XGBOOST_MODEL_DIR = MODELS_DIR / "xgboost_no_trojan"
+NO_TROJAN_LSTM_MODEL_DIR = MODELS_DIR / "lstm_no_trojan"
+NO_TROJAN_ENSEMBLE_MODEL_DIR = MODELS_DIR / "ensemble_no_trojan"
+
 # Results
 RESULTS_DIR = PROJECT_ROOT / "results"
 PLOTS_DIR = RESULTS_DIR / "plots"
 METRICS_DIR = RESULTS_DIR / "metrics"
 SHAP_DIR = RESULTS_DIR / "shap"
+
+# Stage-2 no-Trojan results
+NO_TROJAN_RESULTS_DIR = RESULTS_DIR / "no_trojan"
+NO_TROJAN_PLOTS_DIR = NO_TROJAN_RESULTS_DIR / "plots"
+NO_TROJAN_METRICS_DIR = NO_TROJAN_RESULTS_DIR / "metrics"
+NO_TROJAN_SHAP_DIR = NO_TROJAN_RESULTS_DIR / "shap"
 
 # Phase 7 — Generalizability
 GENERALIZABILITY_DIR = RESULTS_DIR / "generalizability"
@@ -76,7 +96,6 @@ MALWARE_FAMILIES = [
     "Downloader",
     "Dropper",
     "Spyware",
-    "Trojan",
     "Virus",
     "Worms",
 ]
@@ -139,7 +158,7 @@ LSTM_VALIDATION_SPLIT = 0.10
 LSTM_SEQUENCE_LENGTHS = [200, 300, 400]
 
 # Best LSTM sequence length (selected by test macro-F1 in Phase 5)
-LSTM_BEST_SEQ_LEN = 200
+LSTM_BEST_SEQ_LEN = 400
 
 # ReduceLROnPlateau
 LR_REDUCE_FACTOR = 0.5
