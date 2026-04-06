@@ -77,6 +77,9 @@ def compute_all_metrics(
 
     # Multiclass ROC-AUC (one-vs-rest)
     y_true_bin = label_binarize(y_true, classes=list(range(len(class_names))))
+    # label_binarize with 2 classes returns shape (n, 1); expand to (n, 2)
+    if y_true_bin.ndim == 2 and y_true_bin.shape[1] == 1:
+        y_true_bin = np.hstack([1 - y_true_bin, y_true_bin])
     try:
         roc_auc_macro = roc_auc_score(
             y_true_bin, y_prob, average="macro", multi_class="ovr",
@@ -292,6 +295,9 @@ def plot_roc_curves(
         save_path: Path to save the PNG file.
     """
     y_true_bin = label_binarize(y_true, classes=list(range(len(class_names))))
+    # label_binarize with 2 classes returns shape (n, 1); expand to (n, 2)
+    if y_true_bin.ndim == 2 and y_true_bin.shape[1] == 1:
+        y_true_bin = np.hstack([1 - y_true_bin, y_true_bin])
     colors = sns.color_palette("tab10", len(class_names))
 
     fig, ax = plt.subplots(figsize=FIGSIZE_CM)
@@ -347,12 +353,18 @@ def run_shap_analysis(
     explainer = shap.TreeExplainer(model)
     shap_values_raw = explainer.shap_values(X_test)
 
-    # Newer SHAP versions return shape (n_samples, n_features, n_classes).
-    # Convert to list-of-arrays format: [array(n, features), ...] per class.
+    # Normalize SHAP output to list-of-arrays: [array(n, features), ...] per class.
     if isinstance(shap_values_raw, np.ndarray) and shap_values_raw.ndim == 3:
+        # Newer SHAP: shape (n_samples, n_features, n_classes)
         shap_values = [shap_values_raw[:, :, i] for i in range(shap_values_raw.shape[2])]
-    else:
+    elif isinstance(shap_values_raw, np.ndarray) and shap_values_raw.ndim == 2:
+        # Binary classifier: single (n_samples, n_features) array.
+        # Treat as class-1 SHAP; class-0 is the negation.
+        shap_values = [-shap_values_raw, shap_values_raw]
+    elif isinstance(shap_values_raw, list):
         shap_values = shap_values_raw
+    else:
+        shap_values = [shap_values_raw]
 
     # Global bar plot: mean absolute SHAP across all classes
     logger.info("Generating global SHAP summary bar plot...")
