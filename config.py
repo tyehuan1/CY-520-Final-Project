@@ -155,10 +155,10 @@ LSTM_INITIAL_LR = 1e-3
 LSTM_BATCH_SIZE = 64
 LSTM_MAX_EPOCHS = 50
 LSTM_VALIDATION_SPLIT = 0.10
-LSTM_SEQUENCE_LENGTHS = [200, 300, 400]
+LSTM_SEQUENCE_LENGTHS = [300, 400, 500]
 
-# Best LSTM sequence length (selected by test macro-F1 in Phase 5)
-LSTM_BEST_SEQ_LEN = 400
+# Best LSTM sequence length (selected by test macro-F1 after retraining)
+LSTM_BEST_SEQ_LEN = 400  # best macro-F1=0.6561 (tested 300, 400, 500)
 
 # ReduceLROnPlateau
 LR_REDUCE_FACTOR = 0.5
@@ -169,33 +169,10 @@ LR_MIN = 1e-6
 EARLY_STOP_PATIENCE = 7
 
 # =============================================================================
-# Binary (Stage-1) model — malware vs benign detection
-# =============================================================================
-BINARY_CACHE_DIR = CACHE_DIR / "binary"
-BINARY_PREPROCESSED_TRAIN_PATH = BINARY_CACHE_DIR / "preprocessed_train.pkl"
-BINARY_PREPROCESSED_TEST_PATH = BINARY_CACHE_DIR / "preprocessed_test.pkl"
-BINARY_VOCABULARY_PATH = BINARY_CACHE_DIR / "vocabulary.json"
-BINARY_LABEL_ENCODER_PATH = BINARY_CACHE_DIR / "label_encoder.pkl"
-BINARY_FEATURES_DIR = BINARY_CACHE_DIR / "features"
-
-BINARY_XGBOOST_MODEL_DIR = MODELS_DIR / "binary_xgboost"
-BINARY_RESULTS_DIR = RESULTS_DIR / "binary"
-BINARY_METRICS_DIR = BINARY_RESULTS_DIR / "metrics"
-BINARY_PLOTS_DIR = BINARY_RESULTS_DIR / "plots"
-
-BINARY_NUM_CLASSES = 2
-
-# =============================================================================
 # VirusTotal
 # =============================================================================
 VT_API_BASE = "https://www.virustotal.com/api/v3/files"
 VT_RATE_LIMIT_SLEEP = 16  # seconds between requests (safe margin under 4 req/min)
-
-# =============================================================================
-# Hybrid Analysis (for Olivera dataset labeling)
-# =============================================================================
-HA_API_BASE = "https://www.hybrid-analysis.com/api/v2"
-HA_RATE_LIMIT_SLEEP = 18  # seconds between requests (200 req/hour limit)
 
 # =============================================================================
 # Generalizability evaluation

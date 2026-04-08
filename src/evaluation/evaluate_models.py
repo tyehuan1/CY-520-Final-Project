@@ -1,14 +1,8 @@
 """
-Phase 6 — Full evaluation for Stage-1 binary and Stage-2 family models.
+Phase 6 — Full evaluation for the 7-class family classification models.
 
-Evaluates on the Mal-API-2019 held-out test set:
-  - Stage-1: Binary XGBoost (malware vs benign, Olivera-preprocessed)
-  - Stage-2: XGBoost, LSTM, and Ensemble (7-class family, no Trojan)
-
-Each stage is evaluated independently on its own test split.  An end-to-end
-pipeline evaluation is not performed here because the binary and family test
-sets use different preprocessing (Olivera vs full-length); see
-``evaluate_generalizability.py`` for the end-to-end pipeline on MalBehavD.
+Evaluates XGBoost, LSTM, and Ensemble on the Mal-API-2019 held-out test set
+(no-Trojan, 7-class family classification).
 
 Usage::
 
@@ -30,13 +24,11 @@ from src.evaluation.metrics import (
     plot_three_model_comparison,
     run_shap_analysis,
 )
-from src.model_training.binary_xgboost_model import (
-    BINARY_STATISTICAL_FEATURE_NAMES,
-    build_binary_feature_matrix,
-)
 from src.model_training.feature_engineering import (
+    BIGRAM_FEATURE_NAMES,
     CATEGORY_FEATURE_NAMES,
     STATISTICAL_FEATURE_NAMES,
+    build_feature_matrix,
 )
 from src.model_training.lstm_model import load_model as load_lstm_model
 from src.model_training.lstm_model import predict_with_confidence as lstm_predict
@@ -50,117 +42,10 @@ logger = get_logger(__name__)
 
 def main() -> None:
     # ==================================================================
-    # Stage-1: Binary XGBoost (Malware vs Benign)
+    # 7-Class Family Classification (No Trojan)
     # ==================================================================
     logger.info("=" * 70)
-    logger.info("STAGE-1: BINARY XGBOOST (Malware vs Benign)")
-    logger.info("=" * 70)
-
-    logger.info("Loading binary preprocessed data...")
-    bin_train = load_pickle(cfg.BINARY_PREPROCESSED_TRAIN_PATH)
-    bin_test = load_pickle(cfg.BINARY_PREPROCESSED_TEST_PATH)
-    bin_label_enc = load_pickle(cfg.BINARY_LABEL_ENCODER_PATH)
-    bin_tfidf = load_pickle(cfg.BINARY_CACHE_DIR / "tfidf_vectorizer.pkl")
-
-    bin_class_names = list(bin_label_enc.classes_)
-    y_bin_train = bin_label_enc.transform([s["label"] for s in bin_train])
-    y_bin_test = bin_label_enc.transform([s["label"] for s in bin_test])
-
-    logger.info(
-        "Binary dataset: %d train, %d test, classes=%s.",
-        len(bin_train), len(bin_test), bin_class_names,
-    )
-
-    # Class distribution plot
-    cfg.BINARY_PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-    plot_class_distribution(
-        y_bin_train, y_bin_test, bin_class_names,
-        cfg.BINARY_PLOTS_DIR / "binary_class_distribution.png",
-    )
-
-    # Load binary model
-    bin_model = load_xgb_model(cfg.BINARY_XGBOOST_MODEL_DIR / "best_model.pkl")
-
-    # Feature names for SHAP
-    bin_feature_names = (
-        bin_tfidf.get_feature_names_out().tolist()
-        + list(BINARY_STATISTICAL_FEATURE_NAMES)
-        + CATEGORY_FEATURE_NAMES
-    )
-
-    # Build features and predict — train first, then free memory before test
-    logger.info("Building binary train features...")
-    X_bin_train = build_binary_feature_matrix(bin_train, bin_tfidf)
-    bin_train_preds, bin_train_probs = xgb_predict(bin_model, X_bin_train)
-    bin_train_metrics = compute_all_metrics(
-        y_bin_train, bin_train_preds, bin_train_probs, bin_class_names,
-    )
-    del X_bin_train, bin_train_preds, bin_train_probs, bin_train
-    gc.collect()
-
-    logger.info("Building binary test features...")
-    X_bin_test = build_binary_feature_matrix(bin_test, bin_tfidf)
-    bin_test_preds, bin_test_probs = xgb_predict(bin_model, X_bin_test)
-    bin_test_metrics = compute_all_metrics(
-        y_bin_test, bin_test_preds, bin_test_probs, bin_class_names,
-    )
-
-    logger.info("Binary train: acc=%.4f, macro-F1=%.4f",
-                bin_train_metrics["accuracy"], bin_train_metrics["macro_f1"])
-    logger.info("Binary test:  acc=%.4f, macro-F1=%.4f, ROC-AUC=%.4f",
-                bin_test_metrics["accuracy"], bin_test_metrics["macro_f1"],
-                bin_test_metrics["roc_auc_macro"] or 0)
-
-    cfg.BINARY_METRICS_DIR.mkdir(parents=True, exist_ok=True)
-    save_json(
-        {"train": bin_train_metrics, "test": bin_test_metrics},
-        cfg.BINARY_METRICS_DIR / "binary_xgboost_evaluation.json",
-    )
-
-    bin_report = classification_report(
-        y_bin_test, bin_test_preds, target_names=bin_class_names,
-    )
-    logger.info("Binary classification report:\n%s", bin_report)
-
-    # Plots
-    plot_confusion_matrix(
-        y_bin_test, bin_test_preds, bin_class_names,
-        "Stage-1 Binary XGBoost — Confusion Matrix",
-        cfg.BINARY_PLOTS_DIR / "binary_confusion_matrix.png",
-    )
-    plot_confusion_matrix(
-        y_bin_test, bin_test_preds, bin_class_names,
-        "Stage-1 Binary XGBoost — Confusion Matrix (Counts)",
-        cfg.BINARY_PLOTS_DIR / "binary_confusion_matrix_counts.png",
-        normalize=False,
-    )
-    plot_per_class_f1(
-        bin_test_metrics,
-        "Stage-1 Binary XGBoost — Per-Class F1",
-        cfg.BINARY_PLOTS_DIR / "binary_per_class_f1.png",
-    )
-    plot_roc_curves(
-        y_bin_test, bin_test_probs, bin_class_names,
-        "Stage-1 Binary XGBoost — ROC Curves",
-        cfg.BINARY_PLOTS_DIR / "binary_roc_curves.png",
-    )
-
-    # SHAP
-    logger.info("Running SHAP analysis for binary XGBoost...")
-    bin_shap_dir = cfg.BINARY_RESULTS_DIR / "shap"
-    run_shap_analysis(
-        bin_model, X_bin_test, bin_feature_names, bin_class_names, bin_shap_dir,
-    )
-
-    # Free binary artifacts before Stage-2
-    del bin_model, X_bin_test, bin_test, bin_tfidf
-    gc.collect()
-
-    # ==================================================================
-    # Stage-2: 7-Class Family Classification (No Trojan)
-    # ==================================================================
-    logger.info("=" * 70)
-    logger.info("STAGE-2: 7-CLASS FAMILY CLASSIFICATION (No Trojan)")
+    logger.info("7-CLASS FAMILY CLASSIFICATION (No Trojan)")
     logger.info("=" * 70)
 
     logger.info("Loading no-Trojan family data...")
@@ -187,7 +72,7 @@ def main() -> None:
     )
 
     # ── XGBoost ─────────────────────────────────────────────────────────
-    logger.info("Evaluating Stage-2 XGBoost...")
+    logger.info("Evaluating XGBoost...")
     xgb_model = load_xgb_model(cfg.NO_TROJAN_XGBOOST_MODEL_DIR / "best_model.pkl")
     tfidf_vec = load_pickle(cfg.NO_TROJAN_CACHE_DIR / "tfidf_vectorizer.pkl")
 
@@ -195,11 +80,12 @@ def main() -> None:
         tfidf_vec.get_feature_names_out().tolist()
         + list(STATISTICAL_FEATURE_NAMES)
         + CATEGORY_FEATURE_NAMES
+        + BIGRAM_FEATURE_NAMES
     )
 
-    # XGBoost train metrics — load, predict, free
-    logger.info("Loading family XGBoost train features...")
-    X_train_xgb = load_pickle(cfg.NO_TROJAN_FEATURES_DIR / "X_train_xgb.pkl")
+    # XGBoost train metrics — build features, predict, free
+    logger.info("Building XGBoost train features...")
+    X_train_xgb = build_feature_matrix(train_samples, tfidf_vec)
     assert len(feature_names) == X_train_xgb.shape[1]
     xgb_train_preds, xgb_train_probs = xgb_predict(xgb_model, X_train_xgb)
     xgb_train_metrics = compute_all_metrics(
@@ -209,8 +95,8 @@ def main() -> None:
     gc.collect()
 
     # XGBoost test metrics
-    logger.info("Loading family XGBoost test features...")
-    X_test_xgb = load_pickle(cfg.NO_TROJAN_FEATURES_DIR / "X_test_xgb.pkl")
+    logger.info("Building XGBoost test features...")
+    X_test_xgb = build_feature_matrix(test_samples, tfidf_vec)
     xgb_test_preds, xgb_test_probs = xgb_predict(xgb_model, X_test_xgb)
     xgb_test_metrics = compute_all_metrics(
         y_test_int, xgb_test_preds, xgb_test_probs, class_names,
@@ -251,13 +137,13 @@ def main() -> None:
         cfg.NO_TROJAN_PLOTS_DIR / "xgboost_roc_curves.png",
     )
 
-    logger.info("Running SHAP analysis for family XGBoost...")
+    logger.info("Running SHAP analysis for XGBoost...")
     run_shap_analysis(
         xgb_model, X_test_xgb, feature_names, class_names, cfg.NO_TROJAN_SHAP_DIR,
     )
 
     # ── LSTM ────────────────────────────────────────────────────────────
-    logger.info("Evaluating Stage-2 LSTM (seq_len=%d)...", cfg.LSTM_BEST_SEQ_LEN)
+    logger.info("Evaluating LSTM (seq_len=%d)...", cfg.LSTM_BEST_SEQ_LEN)
     lstm_model = load_lstm_model(
         cfg.NO_TROJAN_LSTM_MODEL_DIR / f"best_len{cfg.LSTM_BEST_SEQ_LEN}.keras",
     )
@@ -311,7 +197,7 @@ def main() -> None:
     )
 
     # ── Ensemble ────────────────────────────────────────────────────────
-    logger.info("Evaluating Stage-2 Ensemble...")
+    logger.info("Evaluating Ensemble...")
     from src.model_training.ensemble_model import (
         EnsembleClassifier,
         load_model as load_ensemble_model,
@@ -396,20 +282,10 @@ def main() -> None:
 
     # ── Summary ─────────────────────────────────────────────────────────
     print(f"\n{'='*65}")
-    print("Phase 6 — Evaluation Summary")
+    print("Phase 6 — Evaluation Summary (7-Class Family Classification)")
     print(f"{'='*65}")
 
-    print(f"\n--- Stage-1: Binary Detection ---")
-    for name in bin_class_names:
-        pc = bin_test_metrics["per_class"][name]
-        print(f"  {name:<10} P={pc['precision']:.4f}  R={pc['recall']:.4f}  "
-              f"F1={pc['f1']:.4f}  (n={pc['support']})")
-    print(f"  Overall:   acc={bin_test_metrics['accuracy']:.4f}, "
-          f"macro-F1={bin_test_metrics['macro_f1']:.4f}, "
-          f"AUC={bin_test_metrics['roc_auc_macro'] or 0:.4f}")
-
-    print(f"\n--- Stage-2: 7-Class Family Classification ---")
-    print(f"  {'Model':<12} {'Accuracy':>10} {'Macro-F1':>10} {'ROC-AUC':>10}")
+    print(f"\n  {'Model':<12} {'Accuracy':>10} {'Macro-F1':>10} {'ROC-AUC':>10}")
     print(f"  {'-'*42}")
     for name, m in [("XGBoost", xgb_test_metrics), ("LSTM", lstm_test_metrics)]:
         print(f"  {name:<12} {m['accuracy']:>10.4f} {m['macro_f1']:>10.4f} "
@@ -420,7 +296,6 @@ def main() -> None:
               f"{ens_test_metrics['roc_auc_macro'] or 0:>10.4f}")
 
     print(f"\nResults: {cfg.NO_TROJAN_RESULTS_DIR}")
-    print(f"Binary:  {cfg.BINARY_RESULTS_DIR}")
 
 
 if __name__ == "__main__":

@@ -76,7 +76,7 @@ def train_xgboost(
         scoring="f1_macro",
         cv=cv,
         random_state=random_seed,
-        n_jobs=1,
+        n_jobs=2,
         verbose=1,
         refit=True,
     )
@@ -142,8 +142,50 @@ def load_model(path: Path) -> XGBClassifier:
 # ── End-to-end training pipeline ─────────────────────────────────────────
 
 
+def augment_sequences(
+    samples: list,
+    n_augments: int = 2,
+    min_len: int = 20,
+    max_len: int = 200,
+    random_seed: int = cfg.RANDOM_SEED,
+) -> list:
+    """Create truncated copies of training samples for length robustness.
+
+    For each sample with sequence length > min_len, creates n_augments
+    copies with sequences randomly truncated to lengths drawn uniformly
+    from [min_len, min(len(seq), max_len)].
+
+    Args:
+        samples: Training samples with ``sequence``, ``label``, ``encoded`` fields.
+        n_augments: Number of augmented copies per eligible sample.
+        min_len: Minimum truncation length.
+        max_len: Maximum truncation length.
+        random_seed: Random seed for reproducibility.
+
+    Returns:
+        New list: original samples + augmented samples.
+    """
+    rng = np.random.RandomState(random_seed)
+    augmented = list(samples)  # start with originals
+
+    for sample in samples:
+        seq = sample["sequence"]
+        if len(seq) <= min_len:
+            continue
+        upper = min(len(seq), max_len)
+        for _ in range(n_augments):
+            trunc_len = rng.randint(min_len, upper + 1)
+            new_sample = dict(sample)
+            new_sample["sequence"] = seq[:trunc_len]
+            if "encoded" in sample:
+                new_sample["encoded"] = sample["encoded"][:trunc_len]
+            augmented.append(new_sample)
+
+    return augmented
+
+
 def main() -> None:
-    """Train XGBoost on Mal-API-2019 with TF-IDF + statistical + category features."""
+    """Train XGBoost on Mal-API-2019 with length-normalized features + augmentation."""
     from src.model_training.feature_engineering import build_feature_matrix, build_tfidf_vectorizer
 
     # ── Load no-Trojan preprocessed data ──────────────────────────────────
@@ -152,7 +194,6 @@ def main() -> None:
     test_samples = load_pickle(cfg.NO_TROJAN_TEST_PATH)
     label_encoder = load_pickle(cfg.NO_TROJAN_LABEL_ENCODER_PATH)
 
-    y_train = label_encoder.transform([s["label"] for s in train_samples])
     y_test = label_encoder.transform([s["label"] for s in test_samples])
 
     logger.info(
@@ -160,27 +201,32 @@ def main() -> None:
         len(train_samples), len(test_samples), list(label_encoder.classes_),
     )
 
-    # ── Build or load features ──────────────────────────────────────────
+    # ── Sequence length augmentation ─────────────────────────────────────
+    logger.info("Augmenting training sequences for length robustness...")
+    augmented_train = augment_sequences(train_samples, n_augments=2)
+    y_train = label_encoder.transform([s["label"] for s in augmented_train])
+    logger.info(
+        "Augmented training set: %d samples (%d original + %d augmented).",
+        len(augmented_train), len(train_samples),
+        len(augmented_train) - len(train_samples),
+    )
+
+    # ── Build features (always rebuild — features changed) ───────────────
     cfg.NO_TROJAN_FEATURES_DIR.mkdir(parents=True, exist_ok=True)
-    cache_train = cfg.NO_TROJAN_FEATURES_DIR / "X_train_xgb.pkl"
-    cache_test = cfg.NO_TROJAN_FEATURES_DIR / "X_test_xgb.pkl"
 
-    if cache_train.exists() and cache_test.exists():
-        logger.info("Loading cached feature matrices...")
-        X_train = load_pickle(cache_train)
-        X_test = load_pickle(cache_test)
-    else:
-        logger.info("Building TF-IDF vectorizer...")
-        tfidf_vec = build_tfidf_vectorizer(train_samples)
+    logger.info("Building TF vectorizer on original training data...")
+    tfidf_vec = build_tfidf_vectorizer(train_samples)
 
-        logger.info("Building feature matrices...")
-        X_train = build_feature_matrix(train_samples, tfidf_vec)
-        X_test = build_feature_matrix(test_samples, tfidf_vec)
+    logger.info("Building augmented training feature matrix...")
+    X_train = build_feature_matrix(augmented_train, tfidf_vec)
 
-        # Cache features and vectorizer
-        save_pickle(tfidf_vec, cfg.NO_TROJAN_CACHE_DIR / "tfidf_vectorizer.pkl")
-        save_pickle(X_train, cache_train)
-        save_pickle(X_test, cache_test)
+    logger.info("Building test feature matrix...")
+    X_test = build_feature_matrix(test_samples, tfidf_vec)
+
+    # Cache features and vectorizer
+    save_pickle(tfidf_vec, cfg.NO_TROJAN_CACHE_DIR / "tfidf_vectorizer.pkl")
+    save_pickle(X_train, cfg.NO_TROJAN_FEATURES_DIR / "X_train_xgb.pkl")
+    save_pickle(X_test, cfg.NO_TROJAN_FEATURES_DIR / "X_test_xgb.pkl")
 
     logger.info("Feature matrix shape: train=%s, test=%s", X_train.shape, X_test.shape)
 
