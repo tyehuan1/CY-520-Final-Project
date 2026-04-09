@@ -6,6 +6,7 @@ The vocabulary is built exclusively from the training split.
 """
 
 from collections import Counter
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -333,6 +334,152 @@ def pad_sequences(
         length = min(len(seq), max_len)
         result[i, :length] = seq[:length]
     return result
+
+
+# ── WinMET → Mal-API-2019 format conversion ──────────────────────────────
+
+
+def _winmet_parquet_to_mal_api_files(
+    parquet_path,
+    sequences_out,
+    labels_out,
+    drop_trojan: bool,
+) -> int:
+    """Convert the WinMET extraction Parquet into Mal-API-2019 file format.
+
+    The WinMET extraction (``src/data_loading/extract_winmet.py``) produces
+    a Parquet file with rich metadata (sha256, family_avclass, primary_class,
+    etc.).  For cross-dataset generalizability evaluation, the test set must
+    be in the *same* file format as Mal-API-2019 so that
+    :func:`src.data_loading.data_loader.load_mal_api` can read it directly:
+
+    * ``winmet_sequences.txt`` — one space-separated, lowercase API call
+      sequence per line (matches ``data/Mal API.txt``)
+    * ``winmet_labels.csv`` — one behavioral class label per line, no header
+      (matches ``data/Mal API Labels.csv``)
+
+    The behavioral class written to the labels file is the WinMET
+    ``primary_class`` field — i.e. the AVClass family name (e.g. ``redline``,
+    ``berbew``) has already been *replaced* with one of the Mal-API target
+    classes (``Spyware``, ``Backdoor``, ``Downloader``, ``Worms``, ``Virus``,
+    ``Trojan``) via the ``FAMILY_CLASS_MAPPING`` dict in the extraction
+    script.  Rows whose ``primary_class`` is null/empty (no mapping) are
+    dropped.
+
+    Args:
+        parquet_path: Path to ``winmet_extracted.parquet``.
+        sequences_out: Output path for the Mal-API-format sequences ``.txt``.
+        labels_out: Output path for the Mal-API-format labels ``.csv``.
+        drop_trojan: If True, also drop rows whose ``primary_class`` is
+            ``"Trojan"`` (used to match the no-Trojan trained models).
+
+    Returns:
+        The number of rows written to the output files.
+    """
+    # Local import keeps pyarrow as an optional dep for the rest of the module.
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(str(parquet_path))
+    df = table.to_pandas()
+
+    before = len(df)
+    df = df[df["primary_class"].notna() & (df["primary_class"] != "")]
+    if drop_trojan:
+        df = df[df["primary_class"] != "Trojan"]
+    logger.info(
+        "WinMET → Mal-API conversion: kept %d/%d rows (drop_trojan=%s).",
+        len(df), before, drop_trojan,
+    )
+
+    sequences_out = Path(sequences_out)
+    labels_out = Path(labels_out)
+    sequences_out.parent.mkdir(parents=True, exist_ok=True)
+    labels_out.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(sequences_out, "w", encoding="utf-8") as fseq, \
+         open(labels_out, "w", encoding="utf-8") as flbl:
+        for seq, lbl in zip(df["api_sequence"], df["primary_class"]):
+            # api_sequence is already a space-joined lowercase string.
+            fseq.write(seq + "\n")
+            flbl.write(lbl + "\n")
+
+    logger.info(
+        "WinMET sequences written: %s (%d lines)", sequences_out, len(df),
+    )
+    logger.info(
+        "WinMET labels written:    %s (%d lines)", labels_out, len(df),
+    )
+    return len(df)
+
+
+def winmet_to_mal_api_format(
+    parquet_path=cfg.WINMET_PARQUET_PATH,
+    sequences_out=cfg.WINMET_SEQUENCES_PATH,
+    labels_out=cfg.WINMET_LABELS_PATH,
+) -> int:
+    """Write the **full** WinMET dataset in Mal-API-2019 file format.
+
+    This converts ``data/winmet/winmet_extracted.parquet`` into a pair of
+    files (``winmet_sequences.txt`` + ``winmet_labels.csv``) that can be
+    loaded directly by
+    :func:`src.data_loading.data_loader.load_mal_api`, allowing WinMET to
+    be used as the test set in the existing generalizability evaluation
+    pipeline.
+
+    The AVClass family names (e.g. ``redline``) are replaced with the
+    behavioral class label expected by the Mal-API-2019 trained models
+    (e.g. ``Spyware``).  Rows missing a class mapping are dropped.
+
+    Use this variant when evaluating against models that *include* the
+    ``Trojan`` class.
+
+    Args:
+        parquet_path: Path to the WinMET extraction Parquet.
+        sequences_out: Output path for the sequences ``.txt`` file.
+        labels_out: Output path for the labels ``.csv`` file.
+
+    Returns:
+        Number of rows written.
+    """
+    return _winmet_parquet_to_mal_api_files(
+        parquet_path=parquet_path,
+        sequences_out=sequences_out,
+        labels_out=labels_out,
+        drop_trojan=False,
+    )
+
+
+def winmet_to_mal_api_format_no_trojan(
+    parquet_path=cfg.WINMET_PARQUET_PATH,
+    sequences_out=cfg.WINMET_NO_TROJAN_SEQUENCES_PATH,
+    labels_out=cfg.WINMET_NO_TROJAN_LABELS_PATH,
+) -> int:
+    """Write the WinMET dataset in Mal-API-2019 format **with Trojan removed**.
+
+    Identical to :func:`winmet_to_mal_api_format` (replaces AVClass family
+    names with Mal-API behavioral classes and matches the loader format),
+    but additionally drops every sample whose ``primary_class`` is
+    ``"Trojan"``.
+
+    Use this variant when evaluating against the current
+    ``*_no_trojan`` models in ``models/`` — those models were trained on
+    the 6 non-Trojan classes only, so leaving Trojan samples in would
+    introduce a class the model has never seen.
+
+    Args:
+        parquet_path: Path to the WinMET extraction Parquet.
+        sequences_out: Output path for the no-Trojan sequences ``.txt``.
+        labels_out: Output path for the no-Trojan labels ``.csv``.
+
+    Returns:
+        Number of rows written (Trojan rows excluded).
+    """
+    return _winmet_parquet_to_mal_api_files(
+        parquet_path=parquet_path,
+        sequences_out=sequences_out,
+        labels_out=labels_out,
+        drop_trojan=True,
+    )
 
 
 # ── MalbehavD-V1 preprocessing ────────────────────────────────────────────

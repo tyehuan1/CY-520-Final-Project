@@ -2,7 +2,6 @@
 Central configuration for the malware family classification project.
 
 All file paths, hyperparameters, random seeds, and constants are defined here.
-No magic numbers in code — import from this module.
 """
 
 from pathlib import Path
@@ -68,6 +67,14 @@ GENERALIZABILITY_PLOTS_DIR = GENERALIZABILITY_DIR / "plots"
 GENERALIZABILITY_METRICS_DIR = GENERALIZABILITY_DIR / "metrics"
 MALBEHAVD_LABELED_PATH = CACHE_DIR / "malbehavd_labeled.json"
 OLIVERA_LABELED_PATH = CACHE_DIR / "olivera_labeled.json"
+
+# WinMET (cross-dataset generalizability — Mal-API-format outputs)
+WINMET_DIR = DATA_DIR / "winmet"
+WINMET_PARQUET_PATH = WINMET_DIR / "winmet_extracted.parquet"
+WINMET_SEQUENCES_PATH = WINMET_DIR / "winmet_sequences.txt"
+WINMET_LABELS_PATH = WINMET_DIR / "winmet_labels.csv"
+WINMET_NO_TROJAN_SEQUENCES_PATH = WINMET_DIR / "winmet_sequences_no_trojan.txt"
+WINMET_NO_TROJAN_LABELS_PATH = WINMET_DIR / "winmet_labels_no_trojan.csv"
 OLIVERA_VT_CACHE_PATH = CACHE_DIR / "olivera_vt_cache.json"
 OLIVERA_VT_LABELED_PATH = CACHE_DIR / "olivera_vt_labeled.json"
 HA_CACHE_PATH = CACHE_DIR / "hybrid_analysis_cache.json"

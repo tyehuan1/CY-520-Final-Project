@@ -70,9 +70,7 @@ instance/
 .scrapy
 
 #data files
-data/Mal API Labels.csv
-data/Mal API.txt
-data/MalBehavD-V1-dataset.csv
+data/
 
 
 # Sphinx documentation
