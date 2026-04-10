@@ -20,6 +20,8 @@ from src.data_loading.preprocessing import (
     pad_sequences,
     remove_sandbox_tokens,
     stratified_split,
+    winmet_to_mal_api_format,
+    winmet_to_mal_api_format_no_trojan,
 )
 
 
@@ -319,3 +321,118 @@ class TestUnkRatio:
         vocab = {"<PAD>": 0, "<UNK>": 1}
         samples = [{"sequence": []}]
         assert compute_unk_ratio(samples, vocab) == 0.0
+
+
+# ── WinMET → Mal-API format conversion ────────────────────────────────────
+
+
+class TestWinmetToMalApiFormat:
+    """Tests for winmet_to_mal_api_format and its no-Trojan variant.
+
+    Builds a tiny synthetic WinMET-style Parquet so the tests don't depend
+    on the multi-GB real extraction.
+    """
+
+    @pytest.fixture
+    def fake_winmet_parquet(self, tmp_path):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        rows = [
+            ("hash1", "redline",   "Spyware",    "ntopenfile ntclose"),
+            ("hash2", "berbew",    "Spyware",    "ntcreatefile sysenter"),
+            ("hash3", "amadey",    "Downloader", "regopenkey ntclose"),
+            ("hash4", "djvu",      "Trojan",     "ntopenfile ntclose ntopenfile"),
+            ("hash5", "stop",      "Trojan",     "regopenkey regclose"),
+            ("hash6", "vbclone",   "Worms",      "ntcreatefile ntclose"),
+            ("hash7", "unknownfam", None,        "ntclose"),  # dropped (no class)
+            ("hash8", "unknownfam", "",          "ntclose"),  # dropped (empty class)
+        ]
+        table = pa.table({
+            "sha256":           pa.array([r[0] for r in rows], type=pa.string()),
+            "family_avclass":   pa.array([r[1] for r in rows], type=pa.string()),
+            "family_cape":      pa.array(["x"] * len(rows), type=pa.string()),
+            "family_consensus": pa.array(["x"] * len(rows), type=pa.string()),
+            "primary_class":    pa.array([r[2] for r in rows], type=pa.string()),
+            "secondary_classes": pa.array([""] * len(rows), type=pa.string()),
+            "api_sequence":     pa.array([r[3] for r in rows], type=pa.string()),
+            "num_processes":    pa.array([1] * len(rows), type=pa.int32()),
+            "sequence_length":  pa.array([len(r[3].split()) for r in rows], type=pa.int32()),
+            "source_volume":    pa.array([1] * len(rows), type=pa.int32()),
+        })
+        path = tmp_path / "fake_winmet.parquet"
+        pq.write_table(table, path, compression="snappy")
+        return path
+
+    def test_full_conversion_drops_unmapped(self, fake_winmet_parquet, tmp_path):
+        seq_out = tmp_path / "seqs.txt"
+        lbl_out = tmp_path / "lbls.csv"
+        n = winmet_to_mal_api_format(
+            parquet_path=fake_winmet_parquet,
+            sequences_out=seq_out,
+            labels_out=lbl_out,
+        )
+        # 8 rows total - 2 with null/empty primary_class = 6 written
+        assert n == 6
+        assert seq_out.exists() and lbl_out.exists()
+
+    def test_full_conversion_keeps_trojan(self, fake_winmet_parquet, tmp_path):
+        seq_out = tmp_path / "seqs.txt"
+        lbl_out = tmp_path / "lbls.csv"
+        winmet_to_mal_api_format(
+            parquet_path=fake_winmet_parquet,
+            sequences_out=seq_out,
+            labels_out=lbl_out,
+        )
+        labels = lbl_out.read_text(encoding="utf-8").strip().splitlines()
+        assert "Trojan" in labels
+        assert labels.count("Trojan") == 2
+
+    def test_no_trojan_variant_drops_trojan(self, fake_winmet_parquet, tmp_path):
+        seq_out = tmp_path / "seqs.txt"
+        lbl_out = tmp_path / "lbls.csv"
+        n = winmet_to_mal_api_format_no_trojan(
+            parquet_path=fake_winmet_parquet,
+            sequences_out=seq_out,
+            labels_out=lbl_out,
+        )
+        # 6 mapped rows - 2 Trojan = 4 written
+        assert n == 4
+        labels = lbl_out.read_text(encoding="utf-8").strip().splitlines()
+        assert "Trojan" not in labels
+        assert set(labels) == {"Spyware", "Downloader", "Worms"}
+
+    def test_output_loadable_via_load_mal_api(self, fake_winmet_parquet, tmp_path):
+        """Files must round-trip through load_mal_api unchanged."""
+        seq_out = tmp_path / "seqs.txt"
+        lbl_out = tmp_path / "lbls.csv"
+        winmet_to_mal_api_format(
+            parquet_path=fake_winmet_parquet,
+            sequences_out=seq_out,
+            labels_out=lbl_out,
+        )
+        samples = load_mal_api(
+            sequences_path=seq_out,
+            labels_path=lbl_out,
+            max_seq_len=None,
+        )
+        assert len(samples) == 6
+        # Sequences are space-tokenized lists of lowercase API call strings
+        for s in samples:
+            assert isinstance(s["sequence"], list)
+            assert all(isinstance(t, str) for t in s["sequence"])
+            assert all(t == t.lower() for t in s["sequence"])
+            assert s["label"] in {"Spyware", "Downloader", "Worms", "Trojan"}
+
+    def test_line_counts_match(self, fake_winmet_parquet, tmp_path):
+        """Sequences file and labels file must have identical line counts."""
+        seq_out = tmp_path / "seqs.txt"
+        lbl_out = tmp_path / "lbls.csv"
+        winmet_to_mal_api_format(
+            parquet_path=fake_winmet_parquet,
+            sequences_out=seq_out,
+            labels_out=lbl_out,
+        )
+        n_seq = sum(1 for _ in open(seq_out, encoding="utf-8"))
+        n_lbl = sum(1 for _ in open(lbl_out, encoding="utf-8"))
+        assert n_seq == n_lbl == 6

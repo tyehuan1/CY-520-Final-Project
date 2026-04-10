@@ -223,6 +223,111 @@ def predict_with_confidence(
     return predictions, probabilities
 
 
+def predict_with_sliding_window(
+    model: keras.Model,
+    encoded_sequences: List[List[int]],
+    window_len: int,
+    stride: Optional[int] = None,
+    pad_value: int = 0,
+    batch_size: int = 256,
+    aggregator: str = "mean",
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Score variable-length sequences via overlapping fixed-length windows.
+
+    The trained LSTM only sees ``window_len`` tokens per forward pass, so
+    a 250k-token CAPE trace evaluated as a single padded vector loses
+    everything beyond the first ``window_len`` calls.  This routine
+    splits each sequence into overlapping windows of ``window_len``
+    (step ``stride``), runs the model on the flattened batch, and then
+    aggregates the per-window softmax scores back into one prediction
+    per original sample.
+
+    Aggregation:
+      * ``"mean"``  — average the softmax across windows (default).
+      * ``"max"``   — element-wise max across windows.
+
+    Args:
+        model: Trained Keras model expecting input shape (?, window_len).
+        encoded_sequences: List of integer-encoded sequences (variable
+            length, no padding).
+        window_len: Window size — must match the model's training length.
+        stride: Step between window starts.  Defaults to ``window_len``
+            (non-overlapping); set smaller for overlap.
+        pad_value: Padding token used to fill the final (short) window.
+        batch_size: Batch size for the underlying ``model.predict`` call.
+        aggregator: ``"mean"`` or ``"max"``.
+
+    Returns:
+        Tuple of (predicted_labels, probabilities) with shapes
+        ``(n_samples,)`` and ``(n_samples, num_classes)``.
+    """
+    if stride is None or stride <= 0:
+        stride = window_len
+    if aggregator not in ("mean", "max"):
+        raise ValueError(f"Unknown aggregator: {aggregator!r}")
+
+    # Flatten everything into one big window batch, remembering which
+    # original sample each row belongs to so we can aggregate.
+    flat_windows: List[List[int]] = []
+    owner: List[int] = []
+    for i, seq in enumerate(encoded_sequences):
+        n = len(seq)
+        if n == 0:
+            # Empty sequence — emit a single all-pad window so every
+            # sample contributes at least one prediction.
+            flat_windows.append([pad_value] * window_len)
+            owner.append(i)
+            continue
+        if n <= window_len:
+            window = list(seq) + [pad_value] * (window_len - n)
+            flat_windows.append(window)
+            owner.append(i)
+            continue
+        start = 0
+        while start < n:
+            chunk = seq[start : start + window_len]
+            if len(chunk) < window_len:
+                chunk = list(chunk) + [pad_value] * (window_len - len(chunk))
+            flat_windows.append(list(chunk))
+            owner.append(i)
+            if start + window_len >= n:
+                break
+            start += stride
+
+    X = np.asarray(flat_windows, dtype=np.int32)
+    logger.info(
+        "Sliding-window LSTM inference: %d samples → %d windows "
+        "(window_len=%d, stride=%d, aggregator=%s).",
+        len(encoded_sequences), X.shape[0], window_len, stride, aggregator,
+    )
+
+    win_probs = model.predict(X, verbose=0, batch_size=batch_size)
+    num_classes = win_probs.shape[1]
+
+    # Aggregate window probabilities back to one row per original sample.
+    n_samples = len(encoded_sequences)
+    if aggregator == "mean":
+        agg = np.zeros((n_samples, num_classes), dtype=np.float64)
+        counts = np.zeros((n_samples,), dtype=np.int64)
+        for row, sample_idx in enumerate(owner):
+            agg[sample_idx] += win_probs[row]
+            counts[sample_idx] += 1
+        nz = counts > 0
+        agg[nz] /= counts[nz, None]
+    else:  # max
+        agg = np.full((n_samples, num_classes), -np.inf, dtype=np.float64)
+        for row, sample_idx in enumerate(owner):
+            np.maximum(agg[sample_idx], win_probs[row], out=agg[sample_idx])
+        agg[~np.isfinite(agg)] = 0.0
+        # Renormalize so each row is still a valid probability distribution.
+        row_sums = agg.sum(axis=1, keepdims=True)
+        row_sums[row_sums == 0] = 1.0
+        agg = agg / row_sums
+
+    predictions = np.argmax(agg, axis=1)
+    return predictions, agg.astype(np.float32)
+
+
 def save_model(model: keras.Model, path: Path) -> None:
     """Save a Keras model to disk.
 

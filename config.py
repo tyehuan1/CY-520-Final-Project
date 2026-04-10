@@ -37,6 +37,7 @@ NO_TROJAN_VOCABULARY_PATH = NO_TROJAN_CACHE_DIR / "vocabulary.json"
 NO_TROJAN_LABEL_ENCODER_PATH = NO_TROJAN_CACHE_DIR / "label_encoder.pkl"
 NO_TROJAN_FEATURES_DIR = NO_TROJAN_CACHE_DIR / "features"
 NO_TROJAN_MALBEHAVD_PATH = NO_TROJAN_CACHE_DIR / "malbehavd_labeled.json"
+NO_TROJAN_WINMET_PATH = NO_TROJAN_CACHE_DIR / "winmet_preprocessed.pkl"
 
 # Models
 MODELS_DIR = PROJECT_ROOT / "models"
@@ -49,11 +50,31 @@ NO_TROJAN_XGBOOST_MODEL_DIR = MODELS_DIR / "xgboost_no_trojan"
 NO_TROJAN_LSTM_MODEL_DIR = MODELS_DIR / "lstm_no_trojan"
 NO_TROJAN_ENSEMBLE_MODEL_DIR = MODELS_DIR / "ensemble_no_trojan"
 
+# V2 models — trained on the WITH-Trojan dataset (8 classes), with restored
+# (longer) LSTM sequence lengths, log-dampened category/bigram features, no
+# augment_sequences truncation, and sliding-window LSTM inference at eval
+# time.  Kept entirely separate from the *_no_trojan artifacts above so the
+# previous models stay reproducible.
+V2_CACHE_DIR = CACHE_DIR / "v2"
+V2_FEATURES_DIR = V2_CACHE_DIR / "features"
+V2_LABEL_ENCODER_PATH = V2_CACHE_DIR / "label_encoder.pkl"
+V2_TFIDF_PATH = V2_CACHE_DIR / "tfidf_vectorizer.pkl"
+
+V2_XGBOOST_MODEL_DIR = MODELS_DIR / "xgboost_v2"
+V2_LSTM_MODEL_DIR = MODELS_DIR / "lstm_v2"
+V2_ENSEMBLE_MODEL_DIR = MODELS_DIR / "ensemble_v2"
+# V2 result paths are defined further down, after RESULTS_DIR.
+
 # Results
 RESULTS_DIR = PROJECT_ROOT / "results"
 PLOTS_DIR = RESULTS_DIR / "plots"
 METRICS_DIR = RESULTS_DIR / "metrics"
 SHAP_DIR = RESULTS_DIR / "shap"
+
+# V2 results (with-Trojan retraining)
+V2_RESULTS_DIR = RESULTS_DIR / "v2"
+V2_METRICS_DIR = V2_RESULTS_DIR / "metrics"
+V2_PLOTS_DIR = V2_RESULTS_DIR / "plots"
 
 # Stage-2 no-Trojan results
 NO_TROJAN_RESULTS_DIR = RESULTS_DIR / "no_trojan"
@@ -148,6 +169,18 @@ XGBOOST_CV_FOLDS = 3
 XGBOOST_N_ITER = 40  # Number of random search iterations
 XGBOOST_TREE_METHOD = "hist"
 
+# V2 search space — fewer/shallower trees + stronger regularization to
+# favour generalizable splits over training-distribution memorization.
+XGBOOST_V2_PARAM_DIST = {
+    "n_estimators": [100, 200, 300],
+    "max_depth": [3, 4, 6],
+    "learning_rate": [0.05, 0.1, 0.2],
+    "subsample": [0.7, 0.8, 1.0],
+    "colsample_bytree": [0.5, 0.6, 0.7],
+    "min_child_weight": [3, 5, 7],
+    "gamma": [0.0, 0.1, 0.3],
+}
+
 # =============================================================================
 # LSTM hyperparameters
 # =============================================================================
@@ -166,6 +199,14 @@ LSTM_SEQUENCE_LENGTHS = [300, 400, 500]
 
 # Best LSTM sequence length (selected by test macro-F1 after retraining)
 LSTM_BEST_SEQ_LEN = 400  # best macro-F1=0.6561 (tested 300, 400, 500)
+
+# V2 (with-Trojan) LSTM sweep — restored to the pre-MalBehav lengths so the
+# model can use the longer Mal-API sequences end-to-end.  At eval time
+# sequences longer than the chosen length are handled by the
+# sliding-window inference path (see ``predict_with_sliding_window``).
+LSTM_V2_SEQUENCE_LENGTHS = [200, 500, 1000]
+LSTM_V2_BEST_SEQ_LEN = 500  # best test macro-F1=0.5702 (tested 200, 500, 1000)
+LSTM_V2_SLIDING_STRIDE = 200  # step size for sliding-window inference
 
 # ReduceLROnPlateau
 LR_REDUCE_FACTOR = 0.5

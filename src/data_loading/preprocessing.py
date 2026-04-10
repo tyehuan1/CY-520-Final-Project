@@ -7,7 +7,7 @@ The vocabulary is built exclusively from the training split.
 
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -482,38 +482,304 @@ def winmet_to_mal_api_format_no_trojan(
     )
 
 
+def load_winmet_samples(
+    parquet_path=cfg.WINMET_PARQUET_PATH,
+    drop_trojan: bool = True,
+    max_seq_len=cfg.MAX_RAW_SEQUENCE_LENGTH,
+) -> List[Sample]:
+    """Load WinMET samples from the extraction Parquet for in-memory analysis.
+
+    Returns sample dicts in the same shape as
+    :func:`src.data_loading.data_loader.load_mal_api`'s output (``sequence``
+    + ``label``), but with two extra fields used by the generalizability
+    analysis:
+
+    * ``family_avclass``: the original AVClass family name (e.g. ``redline``,
+      ``vbclone``).  Needed to look up secondary behavioral classes via
+      ``FAMILY_CLASS_MAPPING`` in ``extract_winmet.py`` for the
+      misclassification analysis (e.g. asking "did this prediction land
+      on a *secondary* class for this family?").
+    * ``sha256``: the file hash, useful when joining back to the parquet.
+
+    Use this function (rather than the ``.txt`` / ``.csv`` files written
+    by :func:`winmet_to_mal_api_format`) when you need the parquet's
+    metadata in addition to the sequence and label.  The ``.txt``/``.csv``
+    files are still the right choice when you only need to feed WinMET
+    through code that already speaks the Mal-API-2019 file format.
+
+    Args:
+        parquet_path: Path to ``winmet_extracted.parquet``.
+        drop_trojan: If True, drop rows whose ``primary_class`` is
+            ``"Trojan"`` (matches the no-Trojan trained models).
+        max_seq_len: If set, truncate sequences to this many tokens (matches
+            the truncation used by ``load_mal_api`` so the data goes through
+            the rest of the pipeline at the same scale).
+
+    Returns:
+        List of sample dicts with keys ``sequence``, ``label``,
+        ``family_avclass``, ``sha256``.
+    """
+    import pyarrow.parquet as pq
+
+    # Read only the columns we need; avoid going through pandas because the
+    # api_sequence column contains very large strings (sequences up to ~250k
+    # tokens) and pandas' pyarrow-backed string take/filter ops blow out
+    # memory when filtering rows.  We filter and iterate at the pyarrow level
+    # using Python lists.
+    columns = [
+        "sha256", "family_avclass", "primary_class",
+        "secondary_classes", "api_sequence",
+    ]
+    table = pq.read_table(str(parquet_path), columns=columns)
+    before = table.num_rows
+
+    primary = table.column("primary_class").to_pylist()
+    family = table.column("family_avclass").to_pylist()
+    sha = table.column("sha256").to_pylist()
+    secondary_col = table.column("secondary_classes").to_pylist()
+    api_seq = table.column("api_sequence").to_pylist()
+    del table  # release the arrow buffer once we have python lists
+
+    samples: List[Sample] = []
+    for i in range(before):
+        pc = primary[i]
+        if pc is None or pc == "":
+            continue
+        if drop_trojan and pc == "Trojan":
+            continue
+
+        seq_str = api_seq[i] or ""
+        seq = seq_str.split()
+        if max_seq_len is not None and len(seq) > max_seq_len:
+            seq = seq[:max_seq_len]
+
+        secondary = secondary_col[i]
+        if secondary is None:
+            secondary = []
+        else:
+            secondary = [str(c) for c in list(secondary)]
+
+        samples.append({
+            "sequence": seq,
+            "label": pc,
+            "family_avclass": family[i],
+            "secondary_classes": secondary,
+            "sha256": sha[i],
+        })
+
+    logger.info(
+        "load_winmet_samples: kept %d/%d rows (drop_trojan=%s).",
+        len(samples), before, drop_trojan,
+    )
+    return samples
+
+
+# ── Cross-sandbox token normalization ────────────────────────────────────
+#
+# The Mal-API-2019 vocabulary is built from Cuckoo-hooked API names (only
+# ~265 unique calls — Cuckoo only hooks at the NT layer).  Datasets like
+# WinMET come from CAPE, which hooks both Win32 and lower-level routines,
+# so the same behavior shows up under different names.  These rules let us
+# rewrite CAPE-flavored tokens into their Mal-API equivalents *before*
+# vocabulary lookup, recovering hits that would otherwise become <UNK>.
+#
+# Three categories:
+#   A) Pure spelling/suffix differences (process32next vs process32nextw,
+#      ldrgetprocedureaddressforcaller vs ldrgetprocedureaddress, ...).
+#      Handled by suffix-stripping plus W/A-suffix retry against the vocab.
+#   B) Win32 ↔ NT layer aliases (sleep ↔ ntdelayexecution, virtualalloc ↔
+#      ntallocatevirtualmemory, ...).  Handled by an explicit alias table
+#      below — the user verified each entry against the vocabulary.
+#   C) Calls Cuckoo never hooks at all (getprocessheap, ntwaitforsingleobject,
+#      ntqueryinformationtoken, ...).  These stay <UNK>.
+
+# Win32 / kernel-mode aliases.  Each value MUST be a token that exists in the
+# Mal-API-2019 vocabulary; otherwise the rewrite is a no-op.
+WIN32_TO_NT_ALIASES: Dict[str, str] = {
+    # ── Memory ──
+    "virtualalloc":           "ntallocatevirtualmemory",
+    "virtualallocex":         "ntallocatevirtualmemory",
+    "virtualfree":            "ntfreevirtualmemory",
+    "virtualfreeex":          "ntfreevirtualmemory",
+    "virtualprotect":         "ntprotectvirtualmemory",
+    "virtualprotectex":       "ntprotectvirtualmemory",
+    "globalalloc":            "ntallocatevirtualmemory",
+    "localalloc":             "ntallocatevirtualmemory",
+    "heapalloc":              "ntallocatevirtualmemory",
+    # ── Threading / waits ──
+    "sleep":                  "ntdelayexecution",
+    "sleepex":                "ntdelayexecution",
+    # ── Handles ──
+    "closehandle":            "ntclose",
+    # ── Files ──
+    "createfilew":            "ntcreatefile",
+    "createfilea":            "ntcreatefile",
+    "openfile":               "ntopenfile",
+    "readfile":               "ntreadfile",
+    "readfileex":             "ntreadfile",
+    "writefile":              "ntwritefile",
+    "writefileex":            "ntwritefile",
+    # ── Processes ──
+    "createprocessw":         "createprocessinternalw",
+    "createprocessa":         "createprocessinternalw",
+    "createprocessasuserw":   "createprocessinternalw",
+    "createprocessasusera":   "createprocessinternalw",
+    "ntcreateuserprocess":    "createprocessinternalw",
+    # ── Modules ──
+    "loadlibraryw":           "ldrloaddll",
+    "loadlibrarya":           "ldrloaddll",
+    "loadlibraryexw":         "ldrloaddll",
+    "loadlibraryexa":         "ldrloaddll",
+    "getmodulehandlew":       "ldrgetdllhandle",
+    "getmodulehandlea":       "ldrgetdllhandle",
+    "getmodulehandleexw":     "ldrgetdllhandle",
+    "getmodulehandleexa":     "ldrgetdllhandle",
+    "getprocaddress":         "ldrgetprocedureaddress",
+    # ── File-attribute info classes ──
+    "ntqueryfullattributesfile": "ntqueryattributesfile",
+    # ── Resources ──
+    "lockresource":           "loadresource",
+    # ── Process snapshots (already W-suffixed in vocab) ──
+    "process32next":          "process32nextw",
+    "process32first":         "process32firstw",
+    "thread32next":           "thread32next",   # already in vocab
+    "module32next":           "module32nextw",
+    "module32first":          "module32firstw",
+    # ── Process creation (legacy / wrapper variants) ──
+    "winexec":                "createprocessinternalw",
+    # ── File ops (transactional wrapper) ──
+    "movefilewithprogresstransactedw": "movefilewithprogressw",
+    "movefilewithprogresstransacteda": "movefilewithprogressw",
+    "movefilew":              "movefilewithprogressw",
+    "movefilea":              "movefilewithprogressw",
+    "movefileexw":            "movefilewithprogressw",
+    "movefileexa":            "movefilewithprogressw",
+    # ── Time ──
+    "getsystemtime":          "getsystemtimeasfiletime",
+    "getlocaltime":           "getsystemtimeasfiletime",
+}
+
+# Suffixes that mean "the same call but the caller-tagged variant".
+# Tried in order; the first stripped form that exists in the vocab wins.
+_NORMALIZATION_SUFFIXES: Tuple[str, ...] = (
+    "forcaller",   # ldrgetprocedureaddressforcaller -> ldrgetprocedureaddress
+)
+
+
+def normalize_token_for_vocab(tok: str, vocab: Dict[str, int]) -> str:
+    """Try to rewrite a CAPE-flavored API token into a Mal-API vocab token.
+
+    Returns the original token unchanged if no mapping recovers a vocab hit.
+    The vocab is consulted at every step so we never produce a token that
+    isn't actually a vocabulary entry.
+
+    Order of operations (first hit wins):
+      1. Token already in vocab → return as-is.
+      2. Explicit Win32→NT alias table.
+      3. Strip "forcaller" / similar suffixes.
+      4. Append a ``w`` or ``a`` suffix (e.g. process32next → process32nextw).
+      5. Strip a trailing ``ex`` (e.g. ntsetinformationprocessex → ...process)
+         then retry steps 1+4.
+
+    Args:
+        tok: Lowercased API name from a sandbox trace.
+        vocab: The training-set vocabulary dict.
+
+    Returns:
+        The normalized token (in vocab) or the original token (will become
+        ``<UNK>`` downstream).
+    """
+    if tok in vocab:
+        return tok
+
+    aliased = WIN32_TO_NT_ALIASES.get(tok)
+    if aliased is not None and aliased in vocab:
+        return aliased
+
+    for suf in _NORMALIZATION_SUFFIXES:
+        if tok.endswith(suf):
+            stripped = tok[: -len(suf)]
+            if stripped in vocab:
+                return stripped
+
+    # Append W/A
+    for suf in ("w", "a"):
+        cand = tok + suf
+        if cand in vocab:
+            return cand
+
+    # Strip trailing "ex" / "ex2" then retry vocab + W/A
+    for ex_suf in ("ex2", "ex"):
+        if tok.endswith(ex_suf):
+            stripped = tok[: -len(ex_suf)]
+            if stripped in vocab:
+                return stripped
+            for suf in ("w", "a"):
+                if stripped + suf in vocab:
+                    return stripped + suf
+
+    return tok
+
+
+def normalize_sequence_for_vocab(
+    sequence: List[str], vocab: Dict[str, int],
+) -> List[str]:
+    """Apply :func:`normalize_token_for_vocab` to every token in a sequence."""
+    return [normalize_token_for_vocab(t, vocab) for t in sequence]
+
+
 # ── MalbehavD-V1 preprocessing ────────────────────────────────────────────
 
 
-def preprocess_malbehavd_sequences(
+def preprocess_external_samples(
     samples: List[Sample],
     vocab: Dict[str, int],
     max_repeats: int = cfg.MAX_CONSECUTIVE_DUPLICATES,
+    normalize_for_vocab: bool = False,
+    dataset_name: str = "external",
 ) -> List[Sample]:
-    """Preprocess MalbehavD-V1 samples for inference.
+    """Preprocess samples from a non-training dataset (MalbehavD-V1, WinMET).
 
-    Steps: lowercase all API names, clean, encode with the training vocabulary
-    (unmapped calls become ``<UNK>``).
+    Unified cleaning + (optional) cross-sandbox normalization + encoding so
+    that every external dataset goes through the same path before being
+    cached by ``build_no_trojan_dataset.py``.
+
+    Steps: lowercase all API names, clean, optionally rewrite tokens via
+    :func:`normalize_token_for_vocab` to recover cross-sandbox aliases,
+    encode with the training vocabulary (anything still unmapped becomes
+    ``<UNK>``).
 
     Args:
-        samples: Raw MalbehavD-V1 samples.
+        samples: Raw samples.
         vocab: Training vocabulary.
         max_repeats: Max consecutive duplicates.
+        normalize_for_vocab: If True, apply :func:`normalize_token_for_vocab`
+            to every token after cleaning.  Use for cross-sandbox evaluation
+            (e.g. WinMET) where the source sandbox emits API names under
+            different aliases than Cuckoo (the source of the Mal-API vocab).
+        dataset_name: Logged tag for traceability.
 
     Returns:
-        Preprocessed samples with ``sequence`` (lowercased+cleaned) and
-        ``encoded`` fields.
+        Preprocessed samples with ``sequence`` (lowercased+cleaned, optionally
+        normalized) and ``encoded`` fields.  All other fields on the input
+        dicts are preserved.
     """
     processed = []
     for s in samples:
         new_sample = dict(s)
         lowered = [tok.lower() for tok in s["sequence"]]
         cleaned = clean_sequence(lowered, max_repeats)
+        if normalize_for_vocab:
+            cleaned = normalize_sequence_for_vocab(cleaned, vocab)
         new_sample["sequence"] = cleaned
         new_sample["encoded"] = encode_sequence(cleaned, vocab)
         processed.append(new_sample)
-    logger.info("Preprocessed %d MalbehavD-V1 samples.", len(processed))
+    logger.info("Preprocessed %d %s samples.", len(processed), dataset_name)
     return processed
+
+
+# Backwards-compatible alias — older callers may still import the old name.
+preprocess_malbehavd_sequences = preprocess_external_samples
 
 
 def compute_unk_ratio(samples: List[Sample], vocab: Dict[str, int]) -> float:

@@ -62,8 +62,13 @@ def compute_all_metrics(
     macro_f1 = f1_score(y_true, y_pred, average="macro")
     weighted_f1 = f1_score(y_true, y_pred, average="weighted")
 
+    # Pass labels= so the per-class arrays always have one entry per
+    # class_name even when some classes are absent from y_true (e.g.
+    # cross-dataset evaluation where the eval set lacks some classes).
     precision, recall, f1, support = precision_recall_fscore_support(
-        y_true, y_pred, average=None, zero_division=0,
+        y_true, y_pred,
+        labels=list(range(len(class_names))),
+        average=None, zero_division=0,
     )
 
     per_class = {}
@@ -91,7 +96,9 @@ def compute_all_metrics(
         roc_auc_macro = None
         roc_auc_weighted = None
 
-    cm = confusion_matrix(y_true, y_pred).tolist()
+    cm = confusion_matrix(
+        y_true, y_pred, labels=list(range(len(class_names))),
+    ).tolist()
 
     return {
         "accuracy": round(acc, 4),
@@ -125,10 +132,17 @@ def plot_confusion_matrix(
         save_path: Path to save the PNG file.
         normalize: If True, show row-normalized percentages.
     """
-    cm = confusion_matrix(y_true, y_pred)
+    cm = confusion_matrix(
+        y_true, y_pred, labels=list(range(len(class_names))),
+    )
 
     if normalize:
-        cm_display = cm.astype(float) / cm.sum(axis=1, keepdims=True)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            row_sums = cm.sum(axis=1, keepdims=True)
+            cm_display = np.divide(
+                cm.astype(float), row_sums,
+                out=np.zeros_like(cm, dtype=float), where=row_sums != 0,
+            )
         fmt = ".1%"
     else:
         cm_display = cm
