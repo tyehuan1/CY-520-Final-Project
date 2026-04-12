@@ -1,10 +1,12 @@
 """
-V2 model evaluation: Mal-API test set + generalizability on MalBehavD & WinMET.
+V2 model evaluation: Mal-API test set + generalizability on secondary datasets.
 
 Runs all three V2 models (XGBoost, LSTM, Ensemble) on:
   1. Mal-API-2019 test set (with Trojan, 8-class) — in-distribution baseline
   2. MalBehavD-V1 malware — cross-dataset generalizability (Cuckoo→Cuckoo)
-  3. WinMET no-Trojan — cross-sandbox generalizability (Cuckoo→CAPE)
+  3. WinMET (with Trojan) — cross-sandbox generalizability (Cuckoo→CAPE)
+  4. Olivera (VT-labeled) — cross-dataset generalizability (Cuckoo→Cuckoo,
+     100-call truncated, no consecutive duplicates)
 
 For LSTM evaluations on long sequences, uses sliding-window inference so
 the full sequence is seen (not just the first 500 tokens).
@@ -285,9 +287,12 @@ def main() -> None:
     mb_metrics_dir = cfg.V2_MALBEHAVD_METRICS_DIR
     wm_plots_dir = cfg.V2_WINMET_PLOTS_DIR
     wm_metrics_dir = cfg.V2_WINMET_METRICS_DIR
+    ol_plots_dir = cfg.V2_OLIVERA_PLOTS_DIR
+    ol_metrics_dir = cfg.V2_OLIVERA_METRICS_DIR
     shap_dir = cfg.V2_RESULTS_DIR / "MalAPI" / "shap"
     for d in [malapi_plots_dir, malapi_metrics_dir, mb_plots_dir,
-              mb_metrics_dir, wm_plots_dir, wm_metrics_dir, shap_dir]:
+              mb_metrics_dir, wm_plots_dir, wm_metrics_dir,
+              ol_plots_dir, ol_metrics_dir, shap_dir]:
         d.mkdir(parents=True, exist_ok=True)
 
     # ==================================================================
@@ -353,24 +358,22 @@ def main() -> None:
     )
 
     # ==================================================================
-    # 2. MalBehavD-V1 (malware only, no Trojan)
+    # 2. MalBehavD-V1 (malware only, with Trojan)
     # ==================================================================
     logger.info("=" * 70)
-    logger.info("V2 GENERALIZABILITY — MALBEHAVD (malware-only)")
+    logger.info("V2 GENERALIZABILITY — MALBEHAVD (malware-only, with Trojan)")
     logger.info("=" * 70)
 
-    mb_data = load_json(cfg.NO_TROJAN_MALBEHAVD_PATH)
+    mb_data = load_json(cfg.MALBEHAVD_LABELED_PATH)
     all_mb = mb_data["samples"]
     mb_malware = [s for s in all_mb if s["label"] != cfg.BENIGN_LABEL]
 
-    # Filter to classes this model knows (MalBehavD has no Trojan after
-    # no-Trojan filtering, but guard against unknowns)
+    # Filter to classes this model knows
     known = set(class_names)
     mb_malware = [s for s in mb_malware if s["label"] in known]
-    logger.info("MalBehavD malware: %d samples.", len(mb_malware))
+    logger.info("MalBehavD malware (with Trojan): %d samples.", len(mb_malware))
 
-    # MalBehavD samples from build_no_trojan are encoded with the
-    # no-Trojan vocab.  V2 uses the with-Trojan vocab.  Re-encode.
+    # Re-encode with the V2 vocabulary.
     mb_malware_v2 = preprocess_external_samples(
         mb_malware, vocab, normalize_for_vocab=False,
         dataset_name="MalBehavD-V1 (v2 vocab)",
@@ -385,18 +388,16 @@ def main() -> None:
     )
 
     # ==================================================================
-    # 3. WinMET (no-Trojan, cross-sandbox)
+    # 3. WinMET (with Trojan, cross-sandbox)
     # ==================================================================
     logger.info("=" * 70)
-    logger.info("V2 GENERALIZABILITY — WINMET (no-Trojan, CAPE)")
+    logger.info("V2 GENERALIZABILITY — WINMET (with Trojan, CAPE)")
     logger.info("=" * 70)
 
-    # Load pre-encoded WinMET from build_no_trojan (encoded with no-Trojan
-    # vocab).  Re-encode with the with-Trojan vocab + normalization.
     from src.data_loading.preprocessing import load_winmet_samples
-    wm_raw = load_winmet_samples(drop_trojan=True)
+    wm_raw = load_winmet_samples(drop_trojan=False)
     wm_raw = [s for s in wm_raw if s["label"] in known]
-    logger.info("WinMET (no-Trojan): %d samples.", len(wm_raw))
+    logger.info("WinMET: %d samples.", len(wm_raw))
 
     wm_v2 = preprocess_external_samples(
         wm_raw, vocab, normalize_for_vocab=True,
@@ -470,6 +471,41 @@ def main() -> None:
     save_json(misclass, wm_metrics_dir / "misclassification_analysis.json")
 
     # ==================================================================
+    # 4. Olivera (VT-labeled, cross-dataset)
+    # ==================================================================
+    logger.info("=" * 70)
+    logger.info("V2 GENERALIZABILITY — OLIVERA (VT-labeled, Cuckoo)")
+    logger.info("=" * 70)
+
+    ol_data = load_json(cfg.OLIVERA_VT_LABELED_PATH)
+    ol_samples = ol_data["samples"]
+    # Keep only malware samples whose label the V2 model knows
+    ol_samples = [s for s in ol_samples
+                  if s["label"] in known and s["label"] != cfg.BENIGN_LABEL]
+    logger.info("Olivera VT-labeled malware: %d samples.", len(ol_samples))
+
+    ol_v2 = preprocess_external_samples(
+        ol_samples, vocab, normalize_for_vocab=False,
+        dataset_name="Olivera (v2 vocab)",
+    )
+
+    y_ol = label_encoder.transform([s["label"] for s in ol_v2])
+    ol_results = _run_model_suite(
+        "olivera", ol_v2, y_ol, class_names,
+        label_encoder, xgb_model, lstm_model, ensemble, tfidf_vec,
+        ol_plots_dir, ol_metrics_dir,
+        use_sliding_window=False,  # Olivera seqs are 100 calls max
+    )
+
+    # Save Olivera model comparison
+    ol_comparison = {
+        name: {"accuracy": m["accuracy"], "macro_f1": m["macro_f1"]}
+        for name, m in ol_results.items()
+        if not name.startswith("_")
+    }
+    save_json(ol_comparison, ol_metrics_dir / "olivera_model_comparison.json")
+
+    # ==================================================================
     # Generalization Gap
     # ==================================================================
     logger.info("=" * 70)
@@ -481,20 +517,25 @@ def main() -> None:
         ma_f1 = malapi_results[model_name]["macro_f1"]
         mb_f1 = mb_results[model_name]["macro_f1"]
         wm_f1 = wm_results[model_name]["macro_f1"]
+        ol_f1 = ol_results[model_name]["macro_f1"]
         gap[model_name] = {
             "malapi_f1": ma_f1,
             "malbehavd_f1": mb_f1,
             "winmet_f1": wm_f1,
+            "olivera_f1": ol_f1,
             "malbehavd_gap": round(ma_f1 - mb_f1, 4),
             "winmet_gap": round(ma_f1 - wm_f1, 4),
+            "olivera_gap": round(ma_f1 - ol_f1, 4),
             "malbehavd_drop_pct": round(100 * (ma_f1 - mb_f1) / ma_f1, 1) if ma_f1 > 0 else None,
             "winmet_drop_pct": round(100 * (ma_f1 - wm_f1) / ma_f1, 1) if ma_f1 > 0 else None,
+            "olivera_drop_pct": round(100 * (ma_f1 - ol_f1) / ma_f1, 1) if ma_f1 > 0 else None,
         }
         logger.info(
-            "%s: MalAPI=%.4f | MalBehavD=%.4f (%.1f%% drop) | WinMET=%.4f (%.1f%% drop)",
+            "%s: MalAPI=%.4f | MalBehavD=%.4f (%.1f%% drop) | WinMET=%.4f (%.1f%% drop) | Olivera=%.4f (%.1f%% drop)",
             model_name.upper(), ma_f1,
             mb_f1, gap[model_name]["malbehavd_drop_pct"] or 0,
             wm_f1, gap[model_name]["winmet_drop_pct"] or 0,
+            ol_f1, gap[model_name]["olivera_drop_pct"] or 0,
         )
     save_json(gap, wm_metrics_dir / "generalization_gap.json")
 
@@ -508,14 +549,15 @@ def main() -> None:
     print(f"\nUNK ratio (WinMET, v2 vocab): {wm_unk*100:.2f}%")
 
     print(f"\n--- Macro-F1 by dataset ---")
-    print(f"  {'Model':<10} {'MalAPI':>9} {'MalBehD':>9} {'Drop%':>7} {'WinMET':>9} {'Drop%':>7}")
-    print(f"  {'-'*55}")
+    print(f"  {'Model':<10} {'MalAPI':>9} {'MalBehD':>9} {'Drop%':>7} {'WinMET':>9} {'Drop%':>7} {'Olivera':>9} {'Drop%':>7}")
+    print(f"  {'-'*75}")
     for name in ["xgboost", "lstm"] + (["ensemble"] if ensemble else []):
         g = gap[name]
         print(
             f"  {name:<10} {g['malapi_f1']:>9.4f} {g['malbehavd_f1']:>9.4f} "
             f"{g['malbehavd_drop_pct']:>6.1f}% {g['winmet_f1']:>9.4f} "
-            f"{g['winmet_drop_pct']:>6.1f}%"
+            f"{g['winmet_drop_pct']:>6.1f}% {g['olivera_f1']:>9.4f} "
+            f"{g['olivera_drop_pct']:>6.1f}%"
         )
 
     print(f"\n--- Secondary-Class Hit Rate (WinMET) ---")

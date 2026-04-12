@@ -83,6 +83,8 @@ V2_MALBEHAVD_METRICS_DIR = V2_RESULTS_DIR / "MalBehavD" / "metrics"
 V2_MALBEHAVD_PLOTS_DIR = V2_RESULTS_DIR / "MalBehavD" / "plots"
 V2_WINMET_METRICS_DIR = V2_RESULTS_DIR / "WinMET" / "metrics"
 V2_WINMET_PLOTS_DIR = V2_RESULTS_DIR / "WinMET" / "plots"
+V2_OLIVERA_METRICS_DIR = V2_RESULTS_DIR / "Olivera" / "metrics"
+V2_OLIVERA_PLOTS_DIR = V2_RESULTS_DIR / "Olivera" / "plots"
 V2_TRAINING_METRICS_DIR = V2_RESULTS_DIR / "training" / "metrics"
 
 # Stage-2 no-Trojan results (7-class)

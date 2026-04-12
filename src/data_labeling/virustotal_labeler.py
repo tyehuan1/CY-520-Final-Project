@@ -170,7 +170,7 @@ def save_cache(cache: Dict[str, Any], path: Path = cfg.VT_CACHE_PATH) -> None:
 # ── VT API ─────────────────────────────────────────────────────────────────
 
 
-VT_API_KEY = "edfa2cc77b02b053b3d909eab3354b6f8651d133ef5e3d8799a3142d265a301b"
+VT_API_KEY = os.environ.get("VT_API_KEY", "")  # Set via environment variable or --api-key CLI flag
 
 
 def query_virustotal(sha256: str, api_key: str = VT_API_KEY) -> Optional[Dict[str, Any]]:
