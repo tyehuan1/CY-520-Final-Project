@@ -65,27 +65,42 @@ V2_LSTM_MODEL_DIR = MODELS_DIR / "lstm_v2"
 V2_ENSEMBLE_MODEL_DIR = MODELS_DIR / "ensemble_v2"
 # V2 result paths are defined further down, after RESULTS_DIR.
 
-# Results
+# Results — organised as results/{model_version}/{dataset}/{artifact_type}
 RESULTS_DIR = PROJECT_ROOT / "results"
-PLOTS_DIR = RESULTS_DIR / "plots"
-METRICS_DIR = RESULTS_DIR / "metrics"
-SHAP_DIR = RESULTS_DIR / "shap"
 
-# V2 results (with-Trojan retraining)
+# Original 8-class (with-Trojan) model
+ORIGINAL_RESULTS_DIR = RESULTS_DIR / "original"
+PLOTS_DIR = ORIGINAL_RESULTS_DIR / "MalAPI" / "plots"
+METRICS_DIR = ORIGINAL_RESULTS_DIR / "MalAPI" / "metrics"
+SHAP_DIR = ORIGINAL_RESULTS_DIR / "MalAPI" / "shap"
+ORIGINAL_TRAINING_METRICS_DIR = ORIGINAL_RESULTS_DIR / "training" / "metrics"
+
+# V2 results (with-Trojan retraining, log-dampened features)
 V2_RESULTS_DIR = RESULTS_DIR / "v2"
-V2_METRICS_DIR = V2_RESULTS_DIR / "metrics"
-V2_PLOTS_DIR = V2_RESULTS_DIR / "plots"
+V2_METRICS_DIR = V2_RESULTS_DIR / "MalAPI" / "metrics"
+V2_PLOTS_DIR = V2_RESULTS_DIR / "MalAPI" / "plots"
+V2_MALBEHAVD_METRICS_DIR = V2_RESULTS_DIR / "MalBehavD" / "metrics"
+V2_MALBEHAVD_PLOTS_DIR = V2_RESULTS_DIR / "MalBehavD" / "plots"
+V2_WINMET_METRICS_DIR = V2_RESULTS_DIR / "WinMET" / "metrics"
+V2_WINMET_PLOTS_DIR = V2_RESULTS_DIR / "WinMET" / "plots"
+V2_TRAINING_METRICS_DIR = V2_RESULTS_DIR / "training" / "metrics"
 
-# Stage-2 no-Trojan results
+# Stage-2 no-Trojan results (7-class)
 NO_TROJAN_RESULTS_DIR = RESULTS_DIR / "no_trojan"
-NO_TROJAN_PLOTS_DIR = NO_TROJAN_RESULTS_DIR / "plots"
-NO_TROJAN_METRICS_DIR = NO_TROJAN_RESULTS_DIR / "metrics"
-NO_TROJAN_SHAP_DIR = NO_TROJAN_RESULTS_DIR / "shap"
+NO_TROJAN_PLOTS_DIR = NO_TROJAN_RESULTS_DIR / "MalAPI" / "plots"
+NO_TROJAN_METRICS_DIR = NO_TROJAN_RESULTS_DIR / "MalAPI" / "metrics"
+NO_TROJAN_SHAP_DIR = NO_TROJAN_RESULTS_DIR / "MalAPI" / "shap"
+NO_TROJAN_TRAINING_METRICS_DIR = NO_TROJAN_RESULTS_DIR / "training" / "metrics"
 
-# Phase 7 — Generalizability
-GENERALIZABILITY_DIR = RESULTS_DIR / "generalizability"
-GENERALIZABILITY_PLOTS_DIR = GENERALIZABILITY_DIR / "plots"
-GENERALIZABILITY_METRICS_DIR = GENERALIZABILITY_DIR / "metrics"
+# Cross-dataset generalizability (no-Trojan models evaluated on external data)
+GENERALIZABILITY_DIR = NO_TROJAN_RESULTS_DIR  # legacy alias
+GENERALIZABILITY_MALBEHAVD_METRICS_DIR = NO_TROJAN_RESULTS_DIR / "MalBehavD" / "metrics"
+GENERALIZABILITY_MALBEHAVD_PLOTS_DIR = NO_TROJAN_RESULTS_DIR / "MalBehavD" / "plots"
+GENERALIZABILITY_WINMET_METRICS_DIR = NO_TROJAN_RESULTS_DIR / "WinMET" / "metrics"
+GENERALIZABILITY_WINMET_PLOTS_DIR = NO_TROJAN_RESULTS_DIR / "WinMET" / "plots"
+# Legacy flat aliases (used by older scripts — point to MalBehavD by default)
+GENERALIZABILITY_PLOTS_DIR = GENERALIZABILITY_MALBEHAVD_PLOTS_DIR
+GENERALIZABILITY_METRICS_DIR = GENERALIZABILITY_MALBEHAVD_METRICS_DIR
 MALBEHAVD_LABELED_PATH = CACHE_DIR / "malbehavd_labeled.json"
 OLIVERA_LABELED_PATH = CACHE_DIR / "olivera_labeled.json"
 
@@ -99,6 +114,22 @@ WINMET_NO_TROJAN_LABELS_PATH = WINMET_DIR / "winmet_labels_no_trojan.csv"
 OLIVERA_VT_CACHE_PATH = CACHE_DIR / "olivera_vt_cache.json"
 OLIVERA_VT_LABELED_PATH = CACHE_DIR / "olivera_vt_labeled.json"
 HA_CACHE_PATH = CACHE_DIR / "hybrid_analysis_cache.json"
+
+# Olivera generalizability experiment — train on Olivera-limited Mal-API,
+# test on VT-labeled Olivera.  Both use Cuckoo sandbox, same 307-token vocab
+# (case-normalised), fixed 100-call sequences.
+OLIVERA_CACHE_DIR = CACHE_DIR / "olivera"
+OLIVERA_TRAIN_PATH = OLIVERA_CACHE_DIR / "train.pkl"
+OLIVERA_TEST_PATH = OLIVERA_CACHE_DIR / "test.pkl"
+OLIVERA_EXT_TEST_PATH = OLIVERA_CACHE_DIR / "olivera_test.pkl"
+OLIVERA_VOCABULARY_PATH = OLIVERA_CACHE_DIR / "vocabulary.json"
+OLIVERA_LABEL_ENCODER_PATH = OLIVERA_CACHE_DIR / "label_encoder.pkl"
+OLIVERA_TFIDF_PATH = OLIVERA_CACHE_DIR / "tfidf_vectorizer.pkl"
+OLIVERA_XGBOOST_MODEL_DIR = MODELS_DIR / "xgboost_olivera"
+OLIVERA_LSTM_MODEL_DIR = MODELS_DIR / "lstm_olivera"
+OLIVERA_RESULTS_DIR = RESULTS_DIR / "olivera"
+OLIVERA_METRICS_DIR = OLIVERA_RESULTS_DIR / "metrics"
+OLIVERA_PLOTS_DIR = OLIVERA_RESULTS_DIR / "plots"
 
 # =============================================================================
 # Random seed
@@ -168,6 +199,24 @@ XGBOOST_PARAM_DIST = {
 XGBOOST_CV_FOLDS = 3
 XGBOOST_N_ITER = 40  # Number of random search iterations
 XGBOOST_TREE_METHOD = "hist"
+
+# Olivera experiment — short (100-call) sequences, ~240-token vocab.
+# Reduced TF-IDF dimensions (fewer possible n-grams at this length),
+# bigrams only (trigrams too sparse at 100 calls).
+OLIVERA_TFIDF_MAX_FEATURES = 1000
+OLIVERA_TFIDF_NGRAM_RANGE = (1, 2)
+
+# Olivera XGBoost — reuse V2-style regularised search space.  Short
+# sequences + small vocab = higher overfit risk, so keep trees shallow.
+OLIVERA_XGBOOST_PARAM_DIST = {
+    "n_estimators": [100, 200, 300],
+    "max_depth": [3, 4, 6],
+    "learning_rate": [0.05, 0.1, 0.2],
+    "subsample": [0.7, 0.8, 1.0],
+    "colsample_bytree": [0.5, 0.6, 0.7],
+    "min_child_weight": [3, 5, 7],
+    "gamma": [0.0, 0.1, 0.3],
+}
 
 # V2 search space — fewer/shallower trees + stronger regularization to
 # favour generalizable splits over training-distribution memorization.

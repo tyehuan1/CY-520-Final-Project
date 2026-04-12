@@ -15,10 +15,7 @@ Differences vs the existing ``lstm_model.main()``:
   :func:`src.model_training.lstm_model.predict_with_sliding_window` at
   evaluation time so that long sequences (up to ``MAX_RAW_SEQUENCE_LENGTH``)
   are scored end-to-end rather than truncated to the first window.
-
-Usage::
-
-    python -m src.model_training.train_lstm_v2
+  
 """
 
 import time
