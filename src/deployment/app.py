@@ -31,7 +31,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import config as cfg
-from src.data_loading.preprocessing import encode_sequence, pad_sequences
+from src.data_loading.preprocessing import clean_sequence, encode_sequence, pad_sequences
 from src.model_training.feature_engineering import (
     build_feature_matrix,
     get_feature_names,
@@ -131,6 +131,10 @@ def _predict(sequence: List[str]) -> Dict:
     vocab = _models["vocab"]
     tfidf = _models["tfidf"]
     le = _models["label_encoder"]
+
+    # Match preprocess_external_samples: lowercase + clean so CamelCase input
+    # (e.g. NtClose) resolves to vocab tokens instead of <UNK>.
+    sequence = clean_sequence([tok.lower() for tok in sequence])
 
     # Build sample dict matching the expected format
     sample = {"sequence": sequence}

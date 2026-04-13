@@ -120,7 +120,7 @@ Class labels were collected for Olivera and MalBehavD using the VirusTotal scrip
 XGBoost:
 
 Vocab was constructed by assigning each unqiue call in order an integer plus an UNK and PAD token. Then API calls were replaced with their encoded value.
-Feature engineering was done including a TF-IDF vectorizer (top 5000 unigrams), statistical features (e.g., unique ratio, shannon frequency), API category features, and category-to-category transition features (8x8 matirx showing, for example, network to file transition). Normalizing was done so that sequence length imapct was minimal (which was important given the secondary datasets and the primary dataset had wildly varying lengths). Ended up with a 5,081 feature vector based on the top 5000 unigrams and the other features described. Hyperparamters were selected using RandomizedSearchCV
+Feature engineering was done including a TF-IDF vectorizer (top 5000 ngrams), statistical features (e.g., unique ratio, shannon frequency), API category features, and category-to-category transition features (8x8 matirx showing, for example, network to file transition). Normalizing was done so that sequence length imapct was minimal (which was important given the secondary datasets and the primary dataset had wildly varying lengths). Ended up with a 5,081 feature vector based on the top 5000 ngrams and the other features described. Hyperparamters were selected using RandomizedSearchCV
 XGBoost was ideal because most malware only uses a small subset of the many tracked API calls (only ~280 unique calls in the Mal-Api samples), so the TF-IDF matrix is very sparse which a tree model should handle well. This matched from a paper analyzing this data which found the best performance was at 69% for XGBoost. XGBoost is also good with class imbalances like can be common with malware samples and it allows one to view the SHAP results so you can understand exactly which features are driving a classification (for example, the bigram of cryptencrypt and writefile could be a sign of a ransomware attack that the SHAP could show). Further, XGboost is good more generally with identifying the combination of features throughout the sequence and learning when that is suspicious across this limited vocabulary.
 Potential pitfall is that XGBoost does not understand order vs a model like LSTM that does. A sequence like connect → recv → writefile looks identical to writefile → recv → connect to XGBoost.
 
@@ -204,4 +204,4 @@ For Hugging Face Spaces: create a Gradio SDK Space, push the code/models/require
 Real-Time Inference:
 
 Models load once at startup and are cached in memory
-Single-sample inference completes in 5-8 seconds
+Single-sample inference completes in 1-2 seconds
