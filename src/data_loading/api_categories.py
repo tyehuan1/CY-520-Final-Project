@@ -1,5 +1,5 @@
 """
-Windows API call → behavioral category mapping.
+Windows API call to behavioral category mapping.
 
 Each of the ~271 API calls in the Mal-API-2019 vocabulary is assigned to one
 of 8 behavioral categories.  The mapping is used to compute per-sample
